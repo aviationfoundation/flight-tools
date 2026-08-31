@@ -1,0 +1,212 @@
+---
+import type { DecodedNotam } from '../lib/notam';
+
+interface Props {
+  decoded: DecodedNotam;
+}
+
+const { decoded } = Astro.props;
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+const aField = decoded.fields.find((f) => f.code === 'A');
+const location = aField?.raw ?? decoded.qLine?.fir ?? 'Unknown location';
+
+const now = new Date();
+function toDate(t: { year: number; month: number; day: number; hour: number; minute: number }) {
+  return new Date(Date.UTC(t.year, t.month - 1, t.day, t.hour, t.minute));
+}
+
+let status: { label: string; tone: 'active' | 'future' | 'expired' | 'unknown' } = { label: 'Timing not stated', tone: 'unknown' };
+if (decoded.effectiveFrom) {
+  const from = toDate(decoded.effectiveFrom);
+  const to = decoded.effectiveTo ? toDate(decoded.effectiveTo) : null;
+  if (decoded.permanent) {
+    status = now >= from ? { label: 'Active — permanent', tone: 'active' } : { label: 'Not yet active — permanent once effective', tone: 'future' };
+  } else if (to) {
+    if (now < from) status = { label: 'Not yet active', tone: 'future' };
+    else if (now > to) status = { label: 'Expired', tone: 'expired' };
+    else status = { label: 'Active now', tone: 'active' };
+  } else {
+    status = now >= from ? { label: 'Active — no stated end', tone: 'active' } : { label: 'Not yet active', tone: 'future' };
+  }
+}
+
+const FIELD_ORDER = ['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const;
+const orderedFields = FIELD_ORDER.map((code) => decoded.fields.find((f) => f.code === code)).filter((f): f is NonNullable<typeof f> => !!f);
+
+const qRows = decoded.qLine
+  ? [
+      { label: 'FIR', value: decoded.qLine.fir, plain: null },
+      { label: 'Subject', value: decoded.qLine.subjectCode, plain: decoded.qLine.subjectPlain },
+      { label: 'Condition', value: decoded.qLine.conditionCode, plain: decoded.qLine.conditionPlain },
+      { label: 'Traffic', value: decoded.qLine.traffic, plain: decoded.qLine.trafficPlain },
+      { label: 'Purpose', value: decoded.qLine.purpose, plain: decoded.qLine.purposePlain },
+      { label: 'Scope', value: decoded.qLine.scope, plain: decoded.qLine.scopePlain },
+      { label: 'Altitude block', value: decoded.qLine.lowerFl && decoded.qLine.upperFl ? `FL${decoded.qLine.lowerFl}–FL${decoded.qLine.upperFl}` : null, plain: null },
+      { label: 'Centre / radius', value: decoded.qLine.coordinates ? `${decoded.qLine.coordinates}${decoded.qLine.radiusNm != null ? `, ${decoded.qLine.radiusNm} nm radius` : ''}` : null, plain: null },
+    ].filter((r) => r.value != null)
+  : [];
+---
+
+<article class="nd">
+  <section class="nd-headline">
+    <div class="nd-headline-top">
+      <div class="nd-ident">
+        <h2 class="nd-location num">{location.split(/\s+/)[0]}</h2>
+        <p class="nd-sub">
+          {decoded.series && decoded.number && <span class="num">{decoded.series}{decoded.number}</span>}
+          {decoded.type && <span class="nd-type-chip">{decoded.type}</span>}
+          {decoded.replaces && <span class="nd-replaces">replaces {decoded.replaces}</span>}
+          {decoded.unstructured && <span class="nd-type-chip nd-type-chip-warn">Unstructured paste — best effort</span>}
+        </p>
+      </div>
+      <div class={`nd-status nd-status-${status.tone}`}>
+        <span class="nd-status-dot" aria-hidden="true"></span>
+        {status.label}
+      </div>
+    </div>
+
+    <p class="nd-summary">{decoded.plainSummary}</p>
+
+    {(decoded.effectiveFrom || decoded.effectiveTo || decoded.permanent) && (
+      <div class="nd-timing">
+        <div class="nd-timing-item">
+          <span class="col">Effective from</span>
+          <span class="num">{decoded.effectiveFrom ? `${pad2(decoded.effectiveFrom.day)} ${['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][decoded.effectiveFrom.month]} ${decoded.effectiveFrom.year} ${pad2(decoded.effectiveFrom.hour)}:${pad2(decoded.effectiveFrom.minute)}Z` : '—'}</span>
+        </div>
+        <div class="nd-timing-item">
+          <span class="col">Effective until</span>
+          <span class="num">
+            {decoded.permanent
+              ? 'No end stated (permanent)'
+              : decoded.effectiveTo
+                ? `${pad2(decoded.effectiveTo.day)} ${['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][decoded.effectiveTo.month]} ${decoded.effectiveTo.year} ${pad2(decoded.effectiveTo.hour)}:${pad2(decoded.effectiveTo.minute)}Z${decoded.estimatedEnd ? ' (estimated)' : ''}`
+                : '—'}
+          </span>
+        </div>
+      </div>
+    )}
+  </section>
+
+  {qRows.length > 0 && (
+    <section class="nd-panel">
+      <header class="nd-panel-head">
+        <span class="col">01 — Q-line</span>
+        <span class="nd-panel-note">The coded summary every NOTAM carries, expanded field by field</span>
+      </header>
+      <dl class="nd-qgrid">
+        {qRows.map((row) => (
+          <div class="nd-qrow">
+            <dt>{row.label}</dt>
+            <dd>
+              <span class="num nd-qcode">{row.value}</span>
+              {row.plain && <span class="nd-qplain">{row.plain}</span>}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  )}
+
+  {!decoded.unstructured && orderedFields.length > 0 && (
+    <section class="nd-panel">
+      <header class="nd-panel-head">
+        <span class="col">02 — Item by item</span>
+        <span class="nd-panel-note">Each A)–G) item, translated</span>
+      </header>
+      <ol class="nd-fields">
+        {orderedFields.map((field) => (
+          <li>
+            <span class="nd-field-code">{field.code}</span>
+            <div class="nd-field-body">
+              <code class="nd-field-raw num">{field.raw}</code>
+              <p class="nd-field-plain">{field.plain}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )}
+
+  {decoded.unstructured && (
+    <section class="nd-panel">
+      <header class="nd-panel-head">
+        <span class="col">02 — Decoded text</span>
+        <span class="nd-panel-note">No A)–G) markers were found, so the whole paste was expanded as free text</span>
+      </header>
+      <p class="nd-field-plain nd-unstructured-text">{decoded.plainSummary}</p>
+    </section>
+  )}
+
+  {decoded.unrecognisedTokens.length > 0 && (
+    <p class="nd-flagged">
+      {decoded.unrecognisedTokens.length} token{decoded.unrecognisedTokens.length === 1 ? '' : 's'} in the text
+      (<span class="num">{decoded.unrecognisedTokens.join(', ')}</span>) didn't match a contraction this decoder
+      knows. They're left exactly as written above rather than guessed at.
+    </p>
+  )}
+
+  <section class="nd-panel">
+    <header class="nd-panel-head">
+      <span class="col">03 — Raw text</span>
+    </header>
+    <pre class="nd-raw num">{decoded.raw}</pre>
+  </section>
+</article>
+
+<style>
+  .nd { display: block; margin-top: 40px; }
+
+  .nd-headline { border-top: 1px solid var(--border-strong); padding-top: 22px; }
+  .nd-headline-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 32px; flex-wrap: wrap; }
+  .nd-location { font-family: var(--font-archivo); font-size: clamp(30px, 5vw, 46px); font-weight: 700; letter-spacing: -0.02em; line-height: 1; margin: 0; }
+  .nd-sub { margin: 8px 0 0; font-size: 12.5px; color: var(--text-muted); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .nd-type-chip { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; padding: 2px 6px; border: 1px solid var(--border); color: var(--text-muted); }
+  .nd-type-chip-warn { border-color: var(--warning-border); color: var(--warning); }
+  .nd-replaces { font-style: italic; }
+
+  .nd-status { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; padding: 10px 16px; border: 1px solid var(--border); white-space: nowrap; }
+  .nd-status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+  .nd-status-active { border-color: var(--success-border); color: var(--success); }
+  .nd-status-active .nd-status-dot { background: var(--success); }
+  .nd-status-future { border-color: var(--accent-blue); color: var(--accent-blue); }
+  .nd-status-future .nd-status-dot { background: var(--accent-blue); }
+  .nd-status-expired { color: var(--text-muted); }
+  .nd-status-unknown { color: var(--text-muted); }
+
+  .nd-summary { margin: 20px 0 0; font-size: 16px; line-height: 1.6; max-width: 76ch; }
+
+  .nd-timing { display: flex; gap: 40px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+  .nd-timing-item { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+
+  .nd-panel { margin-top: 40px; }
+  .nd-panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
+  .nd-panel-note { font-size: 11.5px; color: var(--text-subtle); }
+
+  .nd-qgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); margin: 0; }
+  .nd-qrow { background: var(--surface-card); padding: 12px 16px; }
+  .nd-qrow dt { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+  .nd-qrow dd { margin: 6px 0 0; display: flex; flex-direction: column; gap: 3px; }
+  .nd-qcode { font-size: 14px; }
+  .nd-qplain { font-size: 12px; color: var(--text-muted); }
+
+  .nd-fields { list-style: none; margin: 0; padding: 0; }
+  .nd-fields li { display: grid; grid-template-columns: 32px 1fr; gap: 14px; padding: 14px 0; border-top: 1px solid var(--border); }
+  .nd-field-code { font-family: var(--font-archivo); font-weight: 700; font-size: 15px; color: var(--accent-blue); }
+  .nd-field-raw { display: block; font-size: 12px; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .nd-field-plain { margin: 6px 0 0; font-size: 14px; line-height: 1.6; }
+  .nd-unstructured-text { margin-top: 0; }
+
+  .nd-flagged { margin-top: 18px; padding: 12px 14px; border-left: 3px solid var(--warning); background: var(--surface-subtle); font-size: 12.5px; line-height: 1.55; color: var(--text-muted); }
+  .nd-flagged .num { color: var(--fg); }
+
+  .nd-raw { white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.7; padding: 16px; background: var(--surface-subtle); border: 1px solid var(--border); margin: 0; }
+
+  @media (max-width: 640px) {
+    .nd-headline-top { flex-direction: column; }
+    .nd-timing { gap: 24px; }
+  }
+</style>

@@ -1,0 +1,562 @@
+---
+export const prerender = false;
+
+import Layout from '../../layouts/Layout.astro';
+import {
+  windTriangle,
+  trueAirspeed,
+  timeFuelDistance,
+  formatHm,
+  pad3,
+  type WindTriangleResult,
+  type TasResult,
+  type TfdResult,
+} from '../../lib/e6b';
+
+const params = Astro.url.searchParams;
+
+function num(name: string): number | null {
+  const raw = params.get(name);
+  if (raw == null || raw.trim() === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+const tc = num('tc');
+const tas = num('tas');
+const wd = num('wd');
+const ws = num('ws');
+let wind: WindTriangleResult | null = null;
+let windError: string | null = null;
+if (tc != null && tas != null && wd != null && ws != null) {
+  wind = windTriangle({ trueCourseDeg: tc, tasKt: tas, windFromDeg: wd, windSpeedKt: ws });
+  if (!wind) windError = 'That wind is stronger than your airspeed on the beam — no heading holds this course.';
+}
+
+const cas = num('cas');
+const pa = num('pa');
+const oat = num('oat');
+let tasCalc: TasResult | null = null;
+if (cas != null && pa != null && oat != null) {
+  tasCalc = trueAirspeed(cas, pa, oat);
+}
+
+const dist = num('dist');
+const gs = num('gs');
+const time = num('time');
+const burn = num('burn');
+const fuel = num('fuel');
+let tfd: TfdResult | null = null;
+const hasTfdInput = dist != null || gs != null || time != null || burn != null || fuel != null;
+if (hasTfdInput) {
+  tfd = timeFuelDistance({ distanceNm: dist, groundSpeedKt: gs, timeMin: time, fuelBurnGph: burn, fuelOnBoardGal: fuel });
+}
+
+const CX = 100;
+const CY = 100;
+const R = 82;
+
+function point(deg: number, r: number) {
+  const rad = (deg * Math.PI) / 180;
+  return { x: CX + Math.sin(rad) * r, y: CY - Math.cos(rad) * r };
+}
+
+const compassTicks = Array.from({ length: 36 }, (_, i) => {
+  const deg = i * 10;
+  const major = deg % 30 === 0;
+  const outer = point(deg, R);
+  const inner = point(deg, major ? R - 10 : R - 5);
+  return { x1: inner.x, y1: inner.y, x2: outer.x, y2: outer.y, major };
+});
+
+const cardinals = [
+  { deg: 0, label: 'N' },
+  { deg: 90, label: 'E' },
+  { deg: 180, label: 'S' },
+  { deg: 270, label: 'W' },
+].map((c) => ({ ...point(c.deg, R - 20), label: c.label }));
+---
+
+<Layout
+  title="E6B Flight Computer — aviation.foundation"
+  description="Wind correction angle, groundspeed and true heading; true airspeed from calibrated airspeed and density altitude; time, fuel and distance solved from any two of the three. Free, no account, no advertising."
+  currentPath="/tools/e6b"
+>
+  <div class="page-container container-site px-site">
+
+    <header class="page-header">
+      <div class="eyebrow">Flight planning tool</div>
+      <h1 class="serif page-title">E6B Flight Computer</h1>
+      <p class="page-lead">
+        The three calculations the aluminum wheel was built for, worked the same way: a wind
+        triangle for heading and groundspeed, true airspeed from what the airspeed indicator and
+        the altimeter actually show, and time, fuel and distance solved from whichever two of the
+        three you already know.
+      </p>
+    </header>
+
+    <section class="e6b-panel" id="e6b-wind">
+      <header class="e6b-panel-head">
+        <span class="col">01 — Wind triangle</span>
+        <span class="e6b-panel-note">Heading, wind correction angle and groundspeed for one leg</span>
+      </header>
+
+      <div class="e6b-body">
+        <form method="get" action="/tools/e6b#e6b-wind" class="e6b-form" data-e6b-form="wind">
+          <div class="e6b-field">
+            <label class="col" for="e6b-tc">True course</label>
+            <div class="e6b-input-wrap"><input type="number" id="e6b-tc" name="tc" class="e6b-input num" min="0" max="359" step="1" placeholder="270" value={tc ?? ''} data-e6b-input="tc" /><span class="e6b-unit">°T</span></div>
+          </div>
+          <div class="e6b-field">
+            <label class="col" for="e6b-tas">True airspeed</label>
+            <div class="e6b-input-wrap"><input type="number" id="e6b-tas" name="tas" class="e6b-input num" min="1" step="1" placeholder="110" value={tas ?? ''} data-e6b-input="tas" /><span class="e6b-unit">kt</span></div>
+          </div>
+          <div class="e6b-field">
+            <label class="col" for="e6b-wd">Wind from</label>
+            <div class="e6b-input-wrap"><input type="number" id="e6b-wd" name="wd" class="e6b-input num" min="0" max="359" step="1" placeholder="230" value={wd ?? ''} data-e6b-input="wd" /><span class="e6b-unit">°T</span></div>
+          </div>
+          <div class="e6b-field">
+            <label class="col" for="e6b-ws">Wind speed</label>
+            <div class="e6b-input-wrap"><input type="number" id="e6b-ws" name="ws" class="e6b-input num" min="0" step="1" placeholder="18" value={ws ?? ''} data-e6b-input="ws" /><span class="e6b-unit">kt</span></div>
+          </div>
+          <button type="submit" class="btn-outline e6b-submit">Solve</button>
+        </form>
+
+        <div class="e6b-visual">
+          <svg viewBox="0 0 200 200" class="e6b-dial" role="img" aria-label="Course, heading and wind on a compass rose">
+            <circle cx={CX} cy={CY} r={R} class="dial-ring" />
+            {compassTicks.map((t) => <line x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} class={t.major ? 'dial-tick major' : 'dial-tick'} />)}
+            {cardinals.map((c) => <text x={c.x} y={c.y + 4} class="dial-label" text-anchor="middle">{c.label}</text>)}
+
+            {tc != null && (
+              <g data-e6b-course transform={`rotate(${tc} ${CX} ${CY})`}>
+                <line x1={CX} y1={CY} x2={CX} y2={CY - (R - 6)} class="e6b-course-line" />
+              </g>
+            )}
+            {wd != null && (
+              <g data-e6b-wind-arrow transform={`rotate(${wd} ${CX} ${CY})`}>
+                <line x1={CX} y1={CY - R + 2} x2={CX} y2={CY - 34} class="e6b-wind-shaft" />
+                <path d="M 100 92 l -6 -10 l 12 0 Z" class="e6b-wind-head" />
+              </g>
+            )}
+            {wind && (
+              <g data-e6b-heading transform={`rotate(${wind.headingDeg} ${CX} ${CY})`}>
+                <line x1={CX} y1={CY} x2={CX} y2={CY - (R - 6)} class="e6b-heading-line" />
+                <path d="M 100 15 l -5 9 l 10 0 Z" class="e6b-heading-head" />
+              </g>
+            )}
+            <circle cx={CX} cy={CY} r="4" class="dial-hub" />
+          </svg>
+          <ul class="e6b-legend">
+            <li><i class="key course"></i>Course{tc != null ? ` — ${pad3(tc)}°` : ''}</li>
+            <li><i class="key wind"></i>Wind{wd != null && ws != null ? ` — ${pad3(wd)}° at ${ws} kt` : ''}</li>
+            <li><i class="key heading"></i>Heading{wind ? ` — ${pad3(wind.headingDeg)}°` : ''}</li>
+          </ul>
+        </div>
+
+        <div class="e6b-results" data-e6b-results="wind">
+          {windError && <div class="form-alert" data-tone="warning" role="status">{windError}</div>}
+          {wind && (
+            <>
+              <div class="e6b-stat-band">
+                <div class="e6b-stat">
+                  <div class="col">Heading to fly</div>
+                  <div class="e6b-stat-value serif num" data-out="heading">{pad3(wind.headingDeg)}°</div>
+                  <div class="e6b-stat-unit">true</div>
+                </div>
+                <div class="e6b-stat">
+                  <div class="col">Wind correction</div>
+                  <div class="e6b-stat-value serif num" data-out="wca">{Math.abs(wind.windCorrectionAngleDeg).toFixed(1)}°</div>
+                  <div class="e6b-stat-unit" data-out="wca-dir">{wind.windCorrectionAngleDeg >= 0 ? 'right of course' : 'left of course'}</div>
+                </div>
+                <div class="e6b-stat">
+                  <div class="col">Groundspeed</div>
+                  <div class="e6b-stat-value serif num" data-out="gs">{Math.round(wind.groundSpeedKt)}</div>
+                  <div class="e6b-stat-unit">knots</div>
+                </div>
+              </div>
+              <p class="e6b-derivation">
+                Wind is <span data-out="rel-angle">{Math.abs(Math.round(wind.relativeWindAngleDeg))}°</span> off your nose
+                from the <span data-out="rel-side">{wind.relativeWindAngleDeg >= 0 ? 'right' : 'left'}</span>, splitting into
+                a <span data-out="headwind">{Math.abs(wind.headwindKt).toFixed(1)}</span> kt {wind.headwindKt >= 0 ? 'headwind' : 'tailwind'}
+                and a <span data-out="crosswind">{wind.crosswindKt.toFixed(1)}</span> kt crosswind
+                {wind.crosswindFrom !== 'none' && <> from the <span data-out="cross-side">{wind.crosswindFrom}</span></>}. Crab
+                <span data-out="wca2"> {Math.abs(wind.windCorrectionAngleDeg).toFixed(1)}°</span> toward the wind to hold the
+                course over the ground; the crosswind component is what sets that angle, the headwind component is what's
+                left of true airspeed as groundspeed.
+              </p>
+            </>
+          )}
+          {!wind && !windError && <p class="e6b-empty">Enter a course, true airspeed and wind to solve for heading and groundspeed.</p>}
+        </div>
+      </div>
+    </section>
+
+    <section class="e6b-panel" id="e6b-tas-panel">
+      <header class="e6b-panel-head">
+        <span class="col">02 — True airspeed</span>
+        <span class="e6b-panel-note">From calibrated airspeed, pressure altitude and outside air temperature</span>
+      </header>
+
+      <div class="e6b-body e6b-body-narrow">
+        <form method="get" action="/tools/e6b#e6b-tas-panel" class="e6b-form" data-e6b-form="tas">
+          <div class="e6b-field">
+            <label class="col" for="e6b-cas">Calibrated airspeed</label>
+            <div class="e6b-input-wrap"><input type="number" id="e6b-cas" name="cas" class="e6b-input num" min="1" step="1" placeholder="120" value={cas ?? ''} data-e6b-input="cas" /><span class="e6b-unit">kt</span></div>
+          </div>
+          <div class="e6b-field">
+            <label class="col" for="e6b-pa">Pressure altitude</label>
+            <div class="e6b-input-wrap"><input type="number" id="e6b-pa" name="pa" class="e6b-input num" step="100" placeholder="8500" value={pa ?? ''} data-e6b-input="pa" /><span class="e6b-unit">ft</span></div>
+          </div>
+          <div class="e6b-field">
+            <label class="col" for="e6b-oat">Outside air temp</label>
+            <div class="e6b-input-wrap"><input type="number" id="e6b-oat" name="oat" class="e6b-input num" step="1" placeholder="18" value={oat ?? ''} data-e6b-input="oat" /><span class="e6b-unit">°C</span></div>
+          </div>
+          <button type="submit" class="btn-outline e6b-submit">Solve</button>
+        </form>
+
+        <div class="e6b-results" data-e6b-results="tas">
+          {tasCalc && (
+            <>
+              <div class="e6b-stat-band">
+                <div class="e6b-stat">
+                  <div class="col">True airspeed</div>
+                  <div class="e6b-stat-value serif num" data-out="tas">{Math.round(tasCalc.tasKt)}</div>
+                  <div class="e6b-stat-unit">knots</div>
+                </div>
+                <div class="e6b-stat">
+                  <div class="col">Density altitude</div>
+                  <div class="e6b-stat-value serif num" data-out="da">{tasCalc.densityAltFt.toLocaleString('en-US')}</div>
+                  <div class="e6b-stat-unit">ft</div>
+                </div>
+                <div class="e6b-stat">
+                  <div class="col">ISA deviation</div>
+                  <div class="e6b-stat-value serif num" data-out="isa">{tasCalc.isaDevC >= 0 ? '+' : ''}{tasCalc.isaDevC.toFixed(1)}</div>
+                  <div class="e6b-stat-unit">°C</div>
+                </div>
+              </div>
+              <p class="e6b-derivation">
+                Air this thin and <span data-out="isa2">{Math.abs(tasCalc.isaDevC).toFixed(1)}°C {tasCalc.isaDevC >= 0 ? 'warmer' : 'cooler'} than
+                standard</span> has a density ratio (σ) of <span data-out="sigma">{tasCalc.densityRatio.toFixed(3)}</span> against
+                sea level. The airspeed indicator reads dynamic pressure, not speed through the air, so true airspeed is
+                calibrated airspeed divided by √σ — <span data-out="tas2">{Math.round(tasCalc.tasKt)}</span> kt for
+                <span data-out="cas2"> {cas}</span> kt indicated.
+              </p>
+              <a class="e6b-link" data-e6b-use-tas href="#e6b-wind">Use this true airspeed in the wind triangle above ↑</a>
+            </>
+          )}
+          {!tasCalc && <p class="e6b-empty">Enter calibrated airspeed, pressure altitude and OAT to solve for true airspeed and density altitude.</p>}
+        </div>
+      </div>
+    </section>
+
+    <section class="e6b-panel" id="e6b-tfd">
+      <header class="e6b-panel-head">
+        <span class="col">03 — Time, fuel, distance</span>
+        <span class="e6b-panel-note">Enter any two of distance, groundspeed and time — the third fills in</span>
+      </header>
+
+      <div class="e6b-body e6b-body-narrow">
+        <form method="get" action="/tools/e6b#e6b-tfd" class="e6b-form e6b-form-tfd" data-e6b-form="tfd">
+          <div class="e6b-field">
+            <label class="col" for="e6b-dist">Distance</label>
+            <div class="e6b-input-wrap"><input type="number" id="e6b-dist" name="dist" class="e6b-input num" min="0" step="0.1" placeholder="185" value={dist ?? ''} data-e6b-input="dist" /><span class="e6b-unit">nm</span></div>
+          </div>
+          <div class="e6b-field">
+            <label class="col" for="e6b-gs">Groundspeed</label>
+            <div class="e6b-input-wrap"><input type="number" id="e6b-gs" name="gs" class="e6b-input num" min="0" step="1" placeholder="132" value={gs ?? ''} data-e6b-input="gs" /><span class="e6b-unit">kt</span></div>
+          </div>
+          <div class="e6b-field">
+            <label class="col" for="e6b-time">Time</label>
+            <div class="e6b-input-wrap"><input type="number" id="e6b-time" name="time" class="e6b-input num" min="0" step="1" placeholder="84" value={time ?? ''} data-e6b-input="time" /><span class="e6b-unit">min</span></div>
+          </div>
+          <div class="e6b-field">
+            <label class="col" for="e6b-burn">Fuel burn</label>
+            <div class="e6b-input-wrap"><input type="number" id="e6b-burn" name="burn" class="e6b-input num" min="0" step="0.1" placeholder="9.5" value={burn ?? ''} data-e6b-input="burn" /><span class="e6b-unit">gph</span></div>
+          </div>
+          <div class="e6b-field">
+            <label class="col" for="e6b-fuel">Fuel on board</label>
+            <div class="e6b-input-wrap"><input type="number" id="e6b-fuel" name="fuel" class="e6b-input num" min="0" step="0.1" placeholder="40" value={fuel ?? ''} data-e6b-input="fuel" /><span class="e6b-unit">gal</span></div>
+          </div>
+          <button type="submit" class="btn-outline e6b-submit">Solve</button>
+        </form>
+
+        <div class="e6b-results" data-e6b-results="tfd">
+          {tfd && (tfd.distanceNm != null || tfd.groundSpeedKt != null || tfd.timeMin != null) ? (
+            <>
+              <div class="e6b-stat-band">
+                <div class="e6b-stat">
+                  <div class="col">Distance</div>
+                  <div class="e6b-stat-value serif num" data-out="dist">{tfd.distanceNm != null ? Math.round(tfd.distanceNm * 10) / 10 : '—'}</div>
+                  <div class="e6b-stat-unit">nm</div>
+                </div>
+                <div class="e6b-stat">
+                  <div class="col">Groundspeed</div>
+                  <div class="e6b-stat-value serif num" data-out="gs">{tfd.groundSpeedKt != null ? Math.round(tfd.groundSpeedKt) : '—'}</div>
+                  <div class="e6b-stat-unit">kt</div>
+                </div>
+                <div class="e6b-stat">
+                  <div class="col">Time en route</div>
+                  <div class="e6b-stat-value serif num" data-out="time">{formatHm(tfd.timeMin)}</div>
+                  <div class="e6b-stat-unit">{tfd.solvedFor.includes('time') ? 'solved' : 'entered'}</div>
+                </div>
+              </div>
+              {(tfd.fuelUsedGal != null || tfd.enduranceMin != null) && (
+                <dl class="e6b-facts">
+                  {tfd.fuelUsedGal != null && (
+                    <div><dt>Fuel used this leg</dt><dd class="num" data-out="fuel-used">{tfd.fuelUsedGal.toFixed(1)} gal</dd></div>
+                  )}
+                  {tfd.fuelRemainingGal != null && (
+                    <div><dt>Fuel remaining on arrival</dt><dd class="num" data-out="fuel-rem">{tfd.fuelRemainingGal.toFixed(1)} gal</dd></div>
+                  )}
+                  {tfd.enduranceMin != null && (
+                    <div><dt>Endurance at this burn</dt><dd class="num" data-out="endurance">{formatHm(tfd.enduranceMin)}</dd></div>
+                  )}
+                </dl>
+              )}
+            </>
+          ) : (
+            <p class="e6b-empty">Enter any two of distance, groundspeed and time to solve for the third. Add a fuel burn rate and quantity on board to see fuel used and endurance.</p>
+          )}
+        </div>
+      </div>
+    </section>
+
+    <section class="e6b-notes">
+      <header class="e6b-panel-head">
+        <span class="col">How to read this</span>
+      </header>
+      <div class="e6b-faq">
+        <details class="e6b-faq-item" open>
+          <summary><span>Where does the wind correction angle come from?</span><span class="e6b-faq-icon" aria-hidden="true"></span></summary>
+          <p>From the law of sines on the wind triangle: the crosswind component divided by true airspeed gives the sine of the correction angle. It is exact for the geometry, not an approximation — the only imprecision is whatever error is in the wind and airspeed you fed in.</p>
+        </details>
+        <details class="e6b-faq-item">
+          <summary><span>Why is true airspeed higher than calibrated airspeed up high?</span><span class="e6b-faq-icon" aria-hidden="true"></span></summary>
+          <p>The airspeed indicator measures dynamic pressure, which thins out with the air. At altitude the same dynamic pressure — the same indicated reading — corresponds to the aircraft moving faster through the thinner air. The correction is the inverse square root of the density ratio, σ.</p>
+        </details>
+        <details class="e6b-faq-item">
+          <summary><span>Is this compressible or incompressible airspeed?</span><span class="e6b-faq-icon" aria-hidden="true"></span></summary>
+          <p>Incompressible — the same relation a mechanical E6B's slide rule side encodes. Below about 200 knots and 10,000 feet the compressibility correction is under a knot or two; this tool does not apply it, the same way the aluminum wheel never did.</p>
+        </details>
+        <details class="e6b-faq-item">
+          <summary><span>What does this tool not do?</span><span class="e6b-faq-icon" aria-hidden="true"></span></summary>
+          <p>It does not know your aircraft's performance, does not account for magnetic variation between true and magnetic heading, and does not replace a real wind aloft forecast. It solves the triangle you give it — the numbers going in are on you.</p>
+        </details>
+      </div>
+    </section>
+  </div>
+</Layout>
+
+<style>
+  .page-container { padding-top: 56px; padding-bottom: 96px; }
+  .page-header { max-width: 760px; }
+  .page-title { font-size: clamp(34px, 5vw, 54px); line-height: 1.08; margin: 12px 0 0; letter-spacing: -0.01em; }
+  .page-lead { margin: 18px 0 0; font-size: 16px; line-height: 1.65; color: var(--text-muted); }
+
+  .e6b-panel { margin-top: 44px; border-top: 1px solid var(--border-strong); padding-top: 26px; scroll-margin-top: 24px; }
+
+  .e6b-panel-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    padding-bottom: 14px; border-bottom: 1px solid var(--border); margin-bottom: 24px;
+  }
+  .e6b-panel-note { font-size: 11.5px; color: var(--text-subtle); }
+
+  .e6b-body {
+    display: grid;
+    grid-template-columns: minmax(200px, 260px) minmax(200px, 240px) minmax(260px, 1fr);
+    gap: 32px;
+    align-items: start;
+  }
+  .e6b-body-narrow { grid-template-columns: minmax(220px, 280px) minmax(260px, 1fr); }
+
+  .e6b-form { display: flex; flex-direction: column; gap: 14px; }
+  .e6b-form-tfd { display: grid; grid-template-columns: 1fr; gap: 14px; }
+
+  .e6b-field { display: flex; flex-direction: column; gap: 6px; }
+  .e6b-input-wrap { position: relative; display: flex; align-items: center; }
+  .e6b-input {
+    width: 100%; height: 44px; padding: 0 44px 0 12px; font-size: 15px; font-family: var(--font-sans);
+    color: var(--fg); background: var(--surface-card); border: 1px solid var(--border-input); border-radius: 0;
+  }
+  .e6b-input:focus { outline: none; border-color: var(--fg); }
+  .e6b-unit { position: absolute; right: 12px; font-size: 11.5px; color: var(--text-subtle); pointer-events: none; }
+  .e6b-submit { align-self: flex-start; margin-top: 4px; }
+
+  .e6b-visual { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .e6b-dial { width: 100%; max-width: 200px; display: block; overflow: visible; }
+  .dial-ring { fill: none; stroke: var(--border); stroke-width: 1; }
+  .dial-tick { stroke: var(--border); stroke-width: 1; }
+  .dial-tick.major { stroke: var(--text-muted); stroke-width: 1.3; }
+  .dial-label { font-size: 9px; font-weight: 600; fill: var(--text-muted); }
+  .dial-hub { fill: var(--fg); }
+  .e6b-course-line { stroke: var(--text-muted); stroke-width: 1.6; stroke-dasharray: 4 3; }
+  .e6b-wind-shaft { stroke: var(--accent-sky); stroke-width: 2; }
+  .e6b-wind-head { fill: var(--accent-sky); }
+  .e6b-heading-line { stroke: var(--accent-blue); stroke-width: 2.2; }
+  .e6b-heading-head { fill: var(--accent-blue); }
+
+  .e6b-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 11.5px; color: var(--text-muted); }
+  .e6b-legend li { display: flex; align-items: center; gap: 8px; }
+  .key { width: 12px; height: 2px; display: inline-block; border-radius: 1px; }
+  .key.course { background: var(--text-muted); }
+  .key.wind { background: var(--accent-sky); }
+  .key.heading { background: var(--accent-blue); height: 3px; }
+
+  .e6b-results { min-width: 0; }
+  .e6b-stat-band { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .e6b-stat { padding: 14px 16px 16px 0; border-right: 1px solid var(--border); }
+  .e6b-stat:last-child { border-right: none; padding-right: 0; }
+  .e6b-stat-value { font-size: clamp(22px, 3vw, 30px); line-height: 1.1; margin-top: 8px; }
+  .e6b-stat-unit { margin-top: 4px; font-size: 11.5px; color: var(--text-muted); }
+
+  .e6b-derivation { margin: 16px 0 0; font-size: 13px; line-height: 1.65; color: var(--text-muted); max-width: 62ch; }
+  .e6b-derivation span { color: var(--fg); font-variant-numeric: tabular-nums; }
+  .e6b-empty { font-size: 12.5px; color: var(--text-muted); line-height: 1.55; margin: 0; padding-top: 6px; }
+  .e6b-link { display: inline-block; margin-top: 14px; font-size: 12.5px; }
+
+  .e6b-facts { margin: 18px 0 0; display: grid; gap: 8px; }
+  .e6b-facts div { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; }
+  .e6b-facts dt { color: var(--text-muted); }
+  .e6b-facts dd { margin: 0; }
+
+  .e6b-notes { margin-top: 52px; border-top: 1px solid var(--border); padding-top: 26px; }
+  .e6b-faq { max-width: 720px; }
+  .e6b-faq-item { border-top: 1px solid var(--border); }
+  .e6b-faq-item summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; padding: 14px 0; font-size: 14px; }
+  .e6b-faq-item summary::-webkit-details-marker { display: none; }
+  .e6b-faq-icon { width: 14px; height: 14px; position: relative; flex-shrink: 0; }
+  .e6b-faq-icon::before, .e6b-faq-icon::after { content: ''; position: absolute; background: var(--text-muted); top: 50%; left: 50%; transform: translate(-50%, -50%); }
+  .e6b-faq-icon::before { width: 10px; height: 1.4px; }
+  .e6b-faq-icon::after { width: 1.4px; height: 10px; transition: transform var(--dur-fast) var(--ease-out); }
+  .e6b-faq-item[open] .e6b-faq-icon::after { transform: translate(-50%, -50%) scaleY(0); }
+  .e6b-faq-item p { margin: 0 0 16px; font-size: 13px; line-height: 1.65; color: var(--text-muted); }
+
+  @media (max-width: 900px) {
+    .e6b-body, .e6b-body-narrow { grid-template-columns: 1fr; }
+    .e6b-stat-band { grid-template-columns: 1fr; }
+    .e6b-stat { border-right: none; border-bottom: 1px solid var(--border); padding: 12px 0; }
+    .e6b-stat:last-child { border-bottom: none; }
+  }
+</style>
+
+<script>
+  import { windTriangle, trueAirspeed, timeFuelDistance, formatHm, pad3 } from '../../lib/e6b';
+
+  function readNum(form: HTMLFormElement, name: string): number | null {
+    const el = form.elements.namedItem(name) as HTMLInputElement | null;
+    if (!el || el.value.trim() === '') return null;
+    const n = Number(el.value);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function setText(root: ParentNode, key: string, value: string) {
+    root.querySelectorAll<HTMLElement>(`[data-out="${key}"]`).forEach((el) => (el.textContent = value));
+  }
+
+  function setup() {
+    const root = document;
+
+    const windForm = root.querySelector<HTMLFormElement>('[data-e6b-form="wind"]');
+    const windResults = root.querySelector<HTMLElement>('[data-e6b-results="wind"]');
+    const courseGroup = root.querySelector<SVGGElement>('[data-e6b-course]');
+    const windArrow = root.querySelector<SVGGElement>('[data-e6b-wind-arrow]');
+    const headingGroup = root.querySelector<SVGGElement>('[data-e6b-heading]');
+
+    function renderWind() {
+      if (!windForm || !windResults) return;
+      const tc = readNum(windForm, 'tc');
+      const tas = readNum(windForm, 'tas');
+      const wd = readNum(windForm, 'wd');
+      const ws = readNum(windForm, 'ws');
+
+      if (tc != null) { courseGroup?.setAttribute('transform', `rotate(${tc} 100 100)`); courseGroup?.removeAttribute('hidden'); }
+      if (wd != null) { windArrow?.setAttribute('transform', `rotate(${wd} 100 100)`); windArrow?.removeAttribute('hidden'); }
+
+      if (tc == null || tas == null || wd == null || ws == null) return;
+      const result = windTriangle({ trueCourseDeg: tc, tasKt: tas, windFromDeg: wd, windSpeedKt: ws });
+      if (!result) {
+        headingGroup?.setAttribute('hidden', '');
+        return;
+      }
+      headingGroup?.removeAttribute('hidden');
+      headingGroup?.setAttribute('transform', `rotate(${result.headingDeg} 100 100)`);
+
+      setText(windResults, 'heading', `${pad3(result.headingDeg)}°`);
+      setText(windResults, 'wca', `${Math.abs(result.windCorrectionAngleDeg).toFixed(1)}°`);
+      setText(windResults, 'wca-dir', result.windCorrectionAngleDeg >= 0 ? 'right of course' : 'left of course');
+      setText(windResults, 'gs', `${Math.round(result.groundSpeedKt)}`);
+      setText(windResults, 'rel-angle', `${Math.abs(Math.round(result.relativeWindAngleDeg))}°`);
+      setText(windResults, 'rel-side', result.relativeWindAngleDeg >= 0 ? 'right' : 'left');
+      setText(windResults, 'headwind', `${Math.abs(result.headwindKt).toFixed(1)}`);
+      setText(windResults, 'crosswind', `${result.crosswindKt.toFixed(1)}`);
+      if (result.crosswindFrom !== 'none') setText(windResults, 'cross-side', result.crosswindFrom);
+      setText(windResults, 'wca2', ` ${Math.abs(result.windCorrectionAngleDeg).toFixed(1)}°`);
+    }
+
+    windForm?.querySelectorAll('input').forEach((el) => el.addEventListener('input', renderWind));
+    windForm?.addEventListener('submit', (e) => e.preventDefault());
+
+    const tasForm = root.querySelector<HTMLFormElement>('[data-e6b-form="tas"]');
+    const tasResults = root.querySelector<HTMLElement>('[data-e6b-results="tas"]');
+    const useTasLink = root.querySelector<HTMLAnchorElement>('[data-e6b-use-tas]');
+
+    function renderTas() {
+      if (!tasForm || !tasResults) return;
+      const cas = readNum(tasForm, 'cas');
+      const pa = readNum(tasForm, 'pa');
+      const oat = readNum(tasForm, 'oat');
+      if (cas == null || pa == null || oat == null) return;
+      const result = trueAirspeed(cas, pa, oat);
+      setText(tasResults, 'tas', `${Math.round(result.tasKt)}`);
+      setText(tasResults, 'da', result.densityAltFt.toLocaleString('en-US'));
+      setText(tasResults, 'isa', `${result.isaDevC >= 0 ? '+' : ''}${result.isaDevC.toFixed(1)}`);
+      setText(tasResults, 'isa2', `${Math.abs(result.isaDevC).toFixed(1)}°C ${result.isaDevC >= 0 ? 'warmer' : 'cooler'} than standard`);
+      setText(tasResults, 'sigma', result.densityRatio.toFixed(3));
+      setText(tasResults, 'tas2', `${Math.round(result.tasKt)}`);
+      setText(tasResults, 'cas2', ` ${cas}`);
+      if (useTasLink) useTasLink.dataset.tasValue = String(Math.round(result.tasKt));
+    }
+
+    tasForm?.querySelectorAll('input').forEach((el) => el.addEventListener('input', renderTas));
+    tasForm?.addEventListener('submit', (e) => e.preventDefault());
+
+    useTasLink?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const value = useTasLink.dataset.tasValue;
+      const tasInput = windForm?.elements.namedItem('tas') as HTMLInputElement | null;
+      if (value && tasInput) {
+        tasInput.value = value;
+        renderWind();
+        document.getElementById('e6b-wind')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+
+    const tfdForm = root.querySelector<HTMLFormElement>('[data-e6b-form="tfd"]');
+    const tfdResults = root.querySelector<HTMLElement>('[data-e6b-results="tfd"]');
+
+    function renderTfd() {
+      if (!tfdForm || !tfdResults) return;
+      const distanceNm = readNum(tfdForm, 'dist');
+      const groundSpeedKt = readNum(tfdForm, 'gs');
+      const timeMin = readNum(tfdForm, 'time');
+      const fuelBurnGph = readNum(tfdForm, 'burn');
+      const fuelOnBoardGal = readNum(tfdForm, 'fuel');
+      if (distanceNm == null && groundSpeedKt == null && timeMin == null) return;
+
+      const result = timeFuelDistance({ distanceNm, groundSpeedKt, timeMin, fuelBurnGph, fuelOnBoardGal });
+      setText(tfdResults, 'dist', result.distanceNm != null ? String(Math.round(result.distanceNm * 10) / 10) : '—');
+      setText(tfdResults, 'gs', result.groundSpeedKt != null ? String(Math.round(result.groundSpeedKt)) : '—');
+      setText(tfdResults, 'time', formatHm(result.timeMin));
+      if (result.fuelUsedGal != null) setText(tfdResults, 'fuel-used', `${result.fuelUsedGal.toFixed(1)} gal`);
+      if (result.fuelRemainingGal != null) setText(tfdResults, 'fuel-rem', `${result.fuelRemainingGal.toFixed(1)} gal`);
+      if (result.enduranceMin != null) setText(tfdResults, 'endurance', formatHm(result.enduranceMin));
+    }
+
+    tfdForm?.querySelectorAll('input').forEach((el) => el.addEventListener('input', renderTfd));
+    tfdForm?.addEventListener('submit', (e) => e.preventDefault());
+  }
+
+  setup();
+  document.addEventListener('astro:after-swap', setup);
+</script>

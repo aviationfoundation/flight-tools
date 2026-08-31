@@ -1,0 +1,371 @@
+---
+export const prerender = false;
+
+import Layout from '../../layouts/Layout.astro';
+import { computeDistance, SURFACE_LABELS, type Surface, type DistanceResult } from '../../lib/takeoff-landing';
+
+const params = Astro.url.searchParams;
+function num(name: string): number | null {
+  const raw = params.get(name);
+  if (raw == null || raw.trim() === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+const phase = params.get('phase') === 'landing' ? 'landing' : 'takeoff';
+const baselineDistanceFt = num('bd');
+const baselineObstacleFt = num('bo');
+const baselineWeightLb = num('bw');
+const actualWeightLb = num('aw');
+const pressureAltFt = num('pa') ?? 0;
+const oatC = num('oat') ?? 15;
+const windComponentKt = num('wind') ?? 0;
+const slopePercent = num('slope') ?? 0;
+const surfaceParam = params.get('surface');
+const surface: Surface = surfaceParam === 'paved-wet' || surfaceParam === 'grass-dry' || surfaceParam === 'grass-wet' ? surfaceParam : 'paved-dry';
+
+let result: DistanceResult | null = null;
+let obstacleResult: DistanceResult | null = null;
+const hasRequired = baselineDistanceFt != null && baselineWeightLb != null && actualWeightLb != null;
+if (hasRequired) {
+  result = computeDistance({
+    phase,
+    baselineDistanceFt: baselineDistanceFt!,
+    baselineWeightLb: baselineWeightLb!,
+    actualWeightLb: actualWeightLb!,
+    pressureAltFt,
+    oatC,
+    windComponentKt,
+    surface,
+    slopePercent,
+  });
+  if (baselineObstacleFt != null) {
+    obstacleResult = computeDistance({
+      phase,
+      baselineDistanceFt: baselineObstacleFt,
+      baselineWeightLb: baselineWeightLb!,
+      actualWeightLb: actualWeightLb!,
+      pressureAltFt,
+      oatC,
+      windComponentKt,
+      surface,
+      slopePercent,
+    });
+  }
+}
+
+const phaseLabel = phase === 'takeoff' ? 'Takeoff' : 'Landing';
+const rollLabel = phase === 'takeoff' ? 'ground roll' : 'landing roll';
+---
+
+<Layout
+  title={`${phaseLabel} Distance Calculator — aviation.foundation`}
+  description="Derive takeoff or landing distance from your own POH baseline through a visible correction chain — weight, density altitude, wind, surface and slope, each shown as its own step. Free, no account, no advertising."
+  currentPath="/tools/takeoff-landing-distance"
+>
+  <div class="page-container container-site px-site">
+    <header class="page-header">
+      <div class="eyebrow">Flight planning tool</div>
+      <h1 class="serif page-title">Takeoff &amp; Landing Distance</h1>
+      <p class="page-lead">
+        No chart is built in — every POH's numbers belong to that airframe. Enter the baseline your
+        own chart already gives you at sea level and standard conditions, and this walks it through
+        the correction chain a POH's notes describe in words: weight, density altitude, wind,
+        surface, slope. Each step shows its multiplier, so the total is something you can retrace by
+        hand, not a number that arrived from nowhere.
+      </p>
+    </header>
+
+    <section class="tld-layout">
+      <form method="get" action="/tools/takeoff-landing-distance" class="tld-form" id="tld-form">
+        <div class="tld-phase-toggle" role="radiogroup" aria-label="Takeoff or landing">
+          <label class={phase === 'takeoff' ? 'is-active' : ''}>
+            <input type="radio" name="phase" value="takeoff" checked={phase === 'takeoff'} data-tld-input />
+            Takeoff
+          </label>
+          <label class={phase === 'landing' ? 'is-active' : ''}>
+            <input type="radio" name="phase" value="landing" checked={phase === 'landing'} data-tld-input />
+            Landing
+          </label>
+        </div>
+
+        <div class="tld-fieldset">
+          <div class="col">Your POH baseline — sea level, standard day, no wind, paved level runway</div>
+          <div class="tld-grid">
+            <div class="tld-field">
+              <label class="col" for="tld-bd">Ground roll</label>
+              <div class="tld-input-wrap"><input type="number" id="tld-bd" name="bd" class="tld-input num" min="1" step="1" value={baselineDistanceFt ?? ''} data-tld-input required /><span class="tld-unit">ft</span></div>
+            </div>
+            <div class="tld-field">
+              <label class="col" for="tld-bo">Over 50 ft obstacle (optional)</label>
+              <div class="tld-input-wrap"><input type="number" id="tld-bo" name="bo" class="tld-input num" min="1" step="1" value={baselineObstacleFt ?? ''} data-tld-input /><span class="tld-unit">ft</span></div>
+            </div>
+            <div class="tld-field">
+              <label class="col" for="tld-bw">At weight</label>
+              <div class="tld-input-wrap"><input type="number" id="tld-bw" name="bw" class="tld-input num" min="1" step="1" value={baselineWeightLb ?? ''} data-tld-input required /><span class="tld-unit">lb</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tld-fieldset">
+          <div class="col">Today's conditions</div>
+          <div class="tld-grid">
+            <div class="tld-field">
+              <label class="col" for="tld-aw">Actual weight</label>
+              <div class="tld-input-wrap"><input type="number" id="tld-aw" name="aw" class="tld-input num" min="1" step="1" value={actualWeightLb ?? ''} data-tld-input required /><span class="tld-unit">lb</span></div>
+            </div>
+            <div class="tld-field">
+              <label class="col" for="tld-pa">Pressure altitude</label>
+              <div class="tld-input-wrap"><input type="number" id="tld-pa" name="pa" class="tld-input num" step="100" value={pressureAltFt} data-tld-input /><span class="tld-unit">ft</span></div>
+            </div>
+            <div class="tld-field">
+              <label class="col" for="tld-oat">Outside air temp</label>
+              <div class="tld-input-wrap"><input type="number" id="tld-oat" name="oat" class="tld-input num" step="1" value={oatC} data-tld-input /><span class="tld-unit">°C</span></div>
+            </div>
+            <div class="tld-field">
+              <label class="col" for="tld-wind">Wind component</label>
+              <div class="tld-input-wrap"><input type="number" id="tld-wind" name="wind" class="tld-input num" step="1" value={windComponentKt} data-tld-input /><span class="tld-unit">kt</span></div>
+            </div>
+            <div class="tld-field">
+              <label class="col" for="tld-slope">Runway slope</label>
+              <div class="tld-input-wrap"><input type="number" id="tld-slope" name="slope" class="tld-input num" step="0.1" value={slopePercent} data-tld-input /><span class="tld-unit">% up</span></div>
+            </div>
+            <div class="tld-field">
+              <label class="col" for="tld-surface">Surface</label>
+              <select id="tld-surface" name="surface" class="tld-input" data-tld-input>
+                {(Object.keys(SURFACE_LABELS) as Surface[]).map((key) => (
+                  <option value={key} selected={surface === key}>{SURFACE_LABELS[key]}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <p class="tld-help">Headwind is positive, tailwind is negative. Slope is positive uphill in the direction of travel.</p>
+        </div>
+
+        <noscript><button type="submit" class="btn-outline">Calculate</button></noscript>
+      </form>
+
+      <aside class="tld-results">
+        <div data-tld-result-body hidden={!result}>
+          <div class="tld-headline">
+            <div class="col" data-tld-headline-label>{phaseLabel} {rollLabel}</div>
+            <div class="tld-headline-value serif num" data-tld-final>{result ? Math.round(result.finalFt).toLocaleString('en-US') : '—'}</div>
+            <div class="tld-headline-unit">ft, all corrections applied</div>
+          </div>
+
+          <div class="tld-substat" data-tld-obstacle-row hidden={!obstacleResult}>
+            <span class="col">Over a 50 ft obstacle</span>
+            <span class="num" data-tld-obstacle>{obstacleResult ? Math.round(obstacleResult.finalFt).toLocaleString('en-US') + ' ft' : '—'}</span>
+          </div>
+
+          <div class="tld-substat">
+            <span class="col">Total correction</span>
+            <span class="num" data-tld-total-factor>{result ? `×${result.totalFactor.toFixed(2)}` : '—'}</span>
+          </div>
+
+          <p class="tld-margin-note">
+            Add your own margin on top of this before comparing it to the runway available — most
+            training guidance suggests at least 1.5× the calculated distance for a paved runway,
+            more for anything short, contaminated, or unfamiliar.
+          </p>
+        </div>
+        <p class="tld-empty" data-tld-empty hidden={!!result}>Fill in your POH baseline, actual weight, and today's conditions to see the corrected distance.</p>
+      </aside>
+    </section>
+
+    <section class="tld-derivation" data-tld-derivation hidden={!result}>
+      <header class="tld-panel-head">
+        <span class="col">Derivation, step by step</span>
+        <span class="tld-panel-note">Each row multiplies the running distance from the row above</span>
+      </header>
+      <table class="tld-table" data-tld-table>
+        <thead><tr><th>Step</th><th class="num">Factor</th><th class="num">Running distance</th><th>Why</th></tr></thead>
+        <tbody data-tld-steps>
+          {(result?.steps ?? []).map((step) => (
+            <tr>
+              <td>{step.label}</td>
+              <td class="num">×{step.factor.toFixed(3)}</td>
+              <td class="num">{Math.round(step.runningFt).toLocaleString('en-US')} ft</td>
+              <td class="tld-why">{step.detail}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="tld-notes">
+      <header class="tld-panel-head"><span class="col">How to read this</span></header>
+      <div class="tld-faq">
+        <details class="tld-faq-item" open>
+          <summary><span>Why not just enter the tail number and get an answer?</span><span class="tld-faq-icon" aria-hidden="true"></span></summary>
+          <p>Every manufacturer's performance chart is copyrighted and specific to one airframe, engine and prop combination — sometimes to individual serial number ranges. Reproducing one here would mean either paying to license every chart in service or silently guessing, and a wrong guess on takeoff distance is not a place to guess. You supply your own chart's baseline row; this tool owns the correction arithmetic, which is public-domain aviation knowledge.</p>
+        </details>
+        <details class="tld-faq-item">
+          <summary><span>How accurate is the weight-squared rule?</span><span class="tld-faq-icon" aria-hidden="true"></span></summary>
+          <p>It is the approximation taught in the FAA's Pilot's Handbook of Aeronautical Knowledge, and it holds reasonably well within about ±20% of a chart's baseline weight. Outside that range, real POH charts curve more than a pure square law — if your baseline weight and actual weight are far apart, prefer reading two points off your actual chart and interpolating between them instead.</p>
+        </details>
+        <details class="tld-faq-item">
+          <summary><span>Where do the wind, surface and slope numbers come from?</span><span class="tld-faq-icon" aria-hidden="true"></span></summary>
+          <p>The wind rule (10% per 9 kt headwind, 10% per 2 kt tailwind) is the FAA's own published rule of thumb. Surface and slope factors are generic figures used widely in flight training material and in FAA Advisory Circular 91-79A on runway overrun prevention — treat them as a sanity check, not as your aircraft's certified number. When your POH has its own wind, surface or slope correction, use that instead.</p>
+        </details>
+      </div>
+    </section>
+  </div>
+</Layout>
+
+<style>
+  .page-container { padding-top: 56px; padding-bottom: 96px; }
+  .page-header { max-width: 780px; }
+  .page-title { font-size: clamp(34px, 5vw, 54px); line-height: 1.08; margin: 12px 0 0; letter-spacing: -0.01em; }
+  .page-lead { margin: 18px 0 0; font-size: 16px; line-height: 1.65; color: var(--text-muted); }
+
+  .tld-layout { margin-top: 44px; border-top: 1px solid var(--border-strong); padding-top: 26px; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(240px, 1fr); gap: 40px; align-items: start; }
+
+  .tld-phase-toggle { display: inline-flex; border: 1px solid var(--border); margin-bottom: 24px; }
+  .tld-phase-toggle label { padding: 9px 20px; font-size: 13px; cursor: pointer; position: relative; }
+  .tld-phase-toggle label.is-active { background: var(--fg); color: var(--bg); }
+  .tld-phase-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+
+  .tld-fieldset { margin-bottom: 26px; }
+  .tld-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 12px; }
+  .tld-field { display: flex; flex-direction: column; gap: 6px; }
+  .tld-input-wrap { position: relative; display: flex; align-items: center; }
+  .tld-input { height: 42px; padding: 0 12px; font-size: 14px; font-family: var(--font-sans); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border-input); border-radius: 0; width: 100%; }
+  .tld-input:focus { outline: none; border-color: var(--fg); }
+  .tld-input-wrap .tld-input { padding-right: 44px; }
+  .tld-unit { position: absolute; right: 12px; font-size: 11px; color: var(--text-subtle); pointer-events: none; }
+  select.tld-input { padding-right: 12px; appearance: auto; }
+  .tld-help { margin: 10px 0 0; font-size: 11.5px; color: var(--text-subtle); }
+
+  .tld-results { position: sticky; top: 20px; border: 1px solid var(--border); padding: 22px; }
+  .tld-headline-value { font-size: clamp(36px, 4vw, 48px); margin-top: 8px; line-height: 1; }
+  .tld-headline-unit { margin-top: 6px; font-size: 12px; color: var(--text-muted); }
+  .tld-substat { display: flex; align-items: baseline; justify-content: space-between; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 14px; }
+  .tld-margin-note { margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--border); font-size: 12px; line-height: 1.55; color: var(--text-muted); }
+  .tld-empty { font-size: 12.5px; color: var(--text-muted); line-height: 1.55; margin: 0; }
+
+  .tld-derivation { margin-top: 52px; border-top: 1px solid var(--border); padding-top: 26px; }
+  .tld-panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+  .tld-panel-note { font-size: 11.5px; color: var(--text-subtle); }
+  .tld-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .tld-table th, .tld-table td { padding: 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .tld-table th.num, .tld-table td.num { text-align: right; white-space: nowrap; }
+  .tld-table th { font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+  .tld-why { color: var(--text-muted); font-size: 12.5px; line-height: 1.5; max-width: 46ch; }
+
+  .tld-notes { margin-top: 52px; border-top: 1px solid var(--border); padding-top: 26px; }
+  .tld-faq { max-width: 720px; }
+  .tld-faq-item { border-top: 1px solid var(--border); }
+  .tld-faq-item summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; padding: 14px 0; font-size: 14px; }
+  .tld-faq-item summary::-webkit-details-marker { display: none; }
+  .tld-faq-icon { width: 14px; height: 14px; position: relative; flex-shrink: 0; }
+  .tld-faq-icon::before, .tld-faq-icon::after { content: ''; position: absolute; background: var(--text-muted); top: 50%; left: 50%; transform: translate(-50%, -50%); }
+  .tld-faq-icon::before { width: 10px; height: 1.4px; }
+  .tld-faq-icon::after { width: 1.4px; height: 10px; transition: transform var(--dur-fast) var(--ease-out); }
+  .tld-faq-item[open] .tld-faq-icon::after { transform: translate(-50%, -50%) scaleY(0); }
+  .tld-faq-item p { margin: 0 0 16px; font-size: 13px; line-height: 1.65; color: var(--text-muted); }
+
+  @media (max-width: 900px) {
+    .tld-layout { grid-template-columns: 1fr; }
+    .tld-results { position: static; }
+    .tld-grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 520px) {
+    .tld-grid { grid-template-columns: 1fr; }
+  }
+</style>
+
+<script>
+  import { computeDistance, type Surface } from '../../lib/takeoff-landing';
+
+  function setup() {
+    const form = document.getElementById('tld-form') as HTMLFormElement | null;
+    if (!form) return;
+
+    function num(name: string): number | null {
+      const el = form!.elements.namedItem(name) as HTMLInputElement | null;
+      if (!el || el.value.trim() === '') return null;
+      const n = Number(el.value);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    function render() {
+      const phaseEl = form!.querySelector<HTMLInputElement>('input[name="phase"]:checked');
+      const phase = phaseEl?.value === 'landing' ? 'landing' : 'takeoff';
+      form!.querySelectorAll<HTMLLabelElement>('.tld-phase-toggle label').forEach((label) => {
+        const input = label.querySelector('input');
+        label.classList.toggle('is-active', input?.value === phase);
+      });
+
+      const baselineDistanceFt = num('bd');
+      const baselineObstacleFt = num('bo');
+      const baselineWeightLb = num('bw');
+      const actualWeightLb = num('aw');
+      const pressureAltFt = num('pa') ?? 0;
+      const oatC = num('oat') ?? 15;
+      const windComponentKt = num('wind') ?? 0;
+      const slopePercent = num('slope') ?? 0;
+      const surface = (form!.elements.namedItem('surface') as HTMLSelectElement | null)?.value as Surface | undefined;
+
+      const headlineLabel = document.querySelector<HTMLElement>('[data-tld-headline-label]');
+      if (headlineLabel) headlineLabel.textContent = `${phase === 'takeoff' ? 'Takeoff' : 'Landing'} ${phase === 'takeoff' ? 'ground roll' : 'landing roll'}`;
+
+      const resultBody = document.querySelector<HTMLElement>('[data-tld-result-body]');
+      const emptyMsg = document.querySelector<HTMLElement>('[data-tld-empty]');
+      const derivation = document.querySelector<HTMLElement>('[data-tld-derivation]');
+      const obstacleRow = document.querySelector<HTMLElement>('[data-tld-obstacle-row]');
+
+      if (baselineDistanceFt == null || baselineWeightLb == null || actualWeightLb == null || !surface) {
+        if (resultBody) resultBody.hidden = true;
+        if (emptyMsg) emptyMsg.hidden = false;
+        if (derivation) derivation.hidden = true;
+        return;
+      }
+      if (resultBody) resultBody.hidden = false;
+      if (emptyMsg) emptyMsg.hidden = true;
+      if (derivation) derivation.hidden = false;
+
+      const result = computeDistance({
+        phase,
+        baselineDistanceFt,
+        baselineWeightLb,
+        actualWeightLb,
+        pressureAltFt,
+        oatC,
+        windComponentKt,
+        surface,
+        slopePercent,
+      });
+
+      const finalEl = document.querySelector<HTMLElement>('[data-tld-final]');
+      if (finalEl) finalEl.textContent = Math.round(result.finalFt).toLocaleString('en-US');
+      const factorEl = document.querySelector<HTMLElement>('[data-tld-total-factor]');
+      if (factorEl) factorEl.textContent = `×${result.totalFactor.toFixed(2)}`;
+
+      if (baselineObstacleFt != null) {
+        const obstacle = computeDistance({ phase, baselineDistanceFt: baselineObstacleFt, baselineWeightLb, actualWeightLb, pressureAltFt, oatC, windComponentKt, surface, slopePercent });
+        const obstacleEl = document.querySelector<HTMLElement>('[data-tld-obstacle]');
+        if (obstacleEl) obstacleEl.textContent = `${Math.round(obstacle.finalFt).toLocaleString('en-US')} ft`;
+        if (obstacleRow) obstacleRow.hidden = false;
+      } else if (obstacleRow) {
+        obstacleRow.hidden = true;
+      }
+
+      const stepsBody = document.querySelector<HTMLElement>('[data-tld-steps]');
+      if (stepsBody) {
+        stepsBody.innerHTML = '';
+        for (const step of result.steps) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${step.label}</td><td class="num">×${step.factor.toFixed(3)}</td><td class="num">${Math.round(step.runningFt).toLocaleString('en-US')} ft</td><td class="tld-why">${step.detail}</td>`;
+          stepsBody.appendChild(tr);
+        }
+      }
+    }
+
+    form.querySelectorAll('input, select').forEach((el) => el.addEventListener('input', render));
+    form.addEventListener('submit', (e) => e.preventDefault());
+  }
+
+  setup();
+  document.addEventListener('astro:after-swap', setup);
+</script>

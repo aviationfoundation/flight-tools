@@ -16,14 +16,85 @@ const tools = [
       'Crosswind and headwind on any runway you pick',
       'Works from a paste, with no account and no advertising',
     ],
-    status: 'Live',
   },
-];
-
-const planned = [
-  'Weight and balance worksheet, aircraft-agnostic',
-  'Takeoff and landing distance from a published chart, with the derivation shown',
-  'Currency and endorsement tracker driven by a logbook export',
+  {
+    href: '/tools/notam',
+    eyebrow: 'Weather & NAS',
+    title: 'NOTAM Decoder',
+    description:
+      'Paste a NOTAM and read it as a sentence instead of a teletype line. The Q-line’s subject and condition codes expanded, every A)–G) item translated, and the FAA/ICAO contraction set spelled out in full.',
+    points: [
+      'Full ICAO Annex 15 item structure, A) through G)',
+      'Q-line decoded field by field — subject, condition, traffic, scope',
+      'Contractions spelled out; anything unrecognised left unchanged',
+      'Paste-based — no FAA API key required, no account, no advertising',
+    ],
+  },
+  {
+    href: '/tools/e6b',
+    eyebrow: 'Flight planning',
+    title: 'E6B Flight Computer',
+    description:
+      'The three calculations the aluminum wheel was built for: a wind triangle for heading and groundspeed, true airspeed from indicated airspeed and density altitude, and time, fuel and distance solved from any two of the three.',
+    points: [
+      'Wind correction angle, heading and groundspeed on a compass rose',
+      'True airspeed from CAS, pressure altitude and OAT',
+      'Time/fuel/distance solver — enter any two, get the third',
+      'Recomputes live as you type, with no account and no advertising',
+    ],
+  },
+  {
+    href: '/tools/weight-balance',
+    eyebrow: 'Flight planning',
+    title: 'Weight & Balance Worksheet',
+    description:
+      'Aircraft-agnostic on purpose — no chart is built in. Load your own empty weight, stations and POH limits, and see total weight, moment, CG and whether the loading falls inside your envelope.',
+    points: [
+      'Moment breakdown, station by station, shown in full',
+      'Simple forward/aft limits or a full envelope polygon',
+      'CG plotted against the envelope you enter',
+      'Works with your own aircraft’s numbers, no account required',
+    ],
+  },
+  {
+    href: '/tools/takeoff-landing-distance',
+    eyebrow: 'Flight planning',
+    title: 'Takeoff & Landing Distance',
+    description:
+      'Derived, not looked up. Enter your own POH’s baseline distance and this walks it through the correction chain — weight, density altitude, wind, surface, slope — with every multiplier shown.',
+    points: [
+      'Step-by-step derivation, not a single opaque number',
+      'Weight, density altitude, wind, surface and slope corrections',
+      'Optional 50 ft obstacle distance alongside ground roll',
+      'No aircraft chart baked in — you supply your own baseline',
+    ],
+  },
+  {
+    href: '/tools/ad-decoder',
+    eyebrow: 'Maintenance',
+    title: 'Airworthiness Directive Decoder',
+    description:
+      'An AD is already in English — the hard part is structure. Paste one and get its lettered paragraphs labelled, its supersession chain pulled out, and its compliance-time language turned into a calculator.',
+    points: [
+      'Lettered paragraphs (a)–(g) structured and labelled',
+      'AD number, amendment, docket and supersession chain extracted',
+      'Compliance-time language turned into a due-by-date calculator',
+      'Every extraction shown next to the sentence it came from',
+    ],
+  },
+  {
+    href: '/tools/currency',
+    eyebrow: 'Currency',
+    title: 'Currency & Flight Review Tracker',
+    description:
+      'Log flights as they happen and this works out 90-day passenger currency by day and night, your flight review’s 24-month window, and instrument currency’s rolling 6 months — tied to your account and your dashboard.',
+    points: [
+      'Rolling-window math, not a fixed-offset approximation',
+      'Day and night passenger currency, flight review, instrument currency',
+      'Feeds a status card on your dashboard overview',
+      'Requires a free account — the one tool on this page that does',
+    ],
+  },
 ];
 ---
 
@@ -38,8 +109,9 @@ const planned = [
       <h1 class="serif page-title">Tools</h1>
       <p class="page-lead">
         Small, exact utilities for people actually training and flying. Same rules as the rest of
-        this site: no account to use them, no advertising in them, and every derived number
-        labelled as derived.
+        this site: no advertising in them, and every derived number labelled as derived. All but one
+        need no account — the currency tracker is the exception, since the point of it is a log that
+        persists on your dashboard between visits.
       </p>
     </header>
 
@@ -47,10 +119,7 @@ const planned = [
       {tools.map((tool) => (
         <a href={tool.href} class="tool-card">
           <div class="tool-card-main">
-            <div class="tool-card-top">
-              <span class="col">{tool.eyebrow}</span>
-              <span class="tool-status">{tool.status}</span>
-            </div>
+            <span class="col">{tool.eyebrow}</span>
             <h2 class="serif tool-title">{tool.title}</h2>
             <p class="tool-description">{tool.description}</p>
           </div>
@@ -59,21 +128,9 @@ const planned = [
               <li>{point}</li>
             ))}
           </ul>
-          <span class="tool-cta">Open the decoder →</span>
+          <span class="tool-cta">Open the tool →</span>
         </a>
       ))}
-    </section>
-
-    <section class="tool-planned">
-      <div class="col">Not built yet</div>
-      <p class="tool-planned-lead">
-        Named here so the gap is visible rather than implied. Nothing below exists.
-      </p>
-      <ul>
-        {planned.map((item) => (
-          <li>{item}</li>
-        ))}
-      </ul>
     </section>
   </div>
 </Layout>
@@ -111,23 +168,6 @@ const planned = [
   .tool-card:hover { color: inherit; }
   .tool-card:hover .tool-title { color: var(--accent-blue); }
   .tool-card:hover .tool-cta { border-color: var(--border-strong); }
-
-  .tool-card-top {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .tool-status {
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--success);
-    border: 1px solid var(--success-border);
-    background: var(--success-bg);
-    padding: 2px 7px;
-  }
 
   .tool-title {
     font-size: clamp(24px, 3vw, 32px);
@@ -177,23 +217,6 @@ const planned = [
     border-top: 1px solid var(--border);
     padding-top: 16px;
     transition: border-color var(--dur-fast) var(--ease-out);
-  }
-
-  .tool-planned { margin-top: 56px; max-width: 640px; }
-
-  .tool-planned-lead {
-    margin: 10px 0 16px;
-    font-size: 13px;
-    color: var(--text-muted);
-  }
-
-  .tool-planned ul { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
-
-  .tool-planned li {
-    font-size: 13px;
-    color: var(--text-subtle);
-    padding: 11px 0;
-    border-bottom: 1px solid var(--border);
   }
 
   @media (max-width: 780px) {

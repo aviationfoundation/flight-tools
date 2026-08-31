@@ -1408,17 +1408,20 @@ const faqItems = [
     border-bottom-color: var(--tok-color, var(--border));
     padding: 2px 5px;
     cursor: pointer;
-    transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+    transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
   }
 
   .wx-tok:hover,
   .wx-tok:focus-visible,
-  .wx-tok.is-active {
+  .wx-tok.is-active,
+  .wx-tok.is-selected {
     background: var(--tok-color, var(--accent-blue));
     border-color: var(--tok-color, var(--accent-blue));
     color: var(--bg);
     outline: none;
   }
+
+  .wx.has-selection .wx-tok:not(.is-selected) { opacity: 0.4; }
 
   .wx-tok[data-kind='station'], .wx-decode li[data-kind='station'] { --tok-color: var(--accent-blue); }
   .wx-tok[data-kind='time'], .wx-decode li[data-kind='time'] { --tok-color: var(--text-muted); }
@@ -1446,7 +1449,7 @@ const faqItems = [
     font-size: 13px;
     scroll-margin-top: 90px;
     cursor: pointer;
-    transition: background-color var(--dur-fast) var(--ease-out);
+    transition: background-color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
   }
 
   .wx-decode li:hover,
@@ -1458,26 +1461,13 @@ const faqItems = [
   .wx-decode li.is-active { background: var(--surface-subtle); }
   .wx-decode li.is-active .wx-dec-code { border-color: var(--tok-color, var(--border-strong)); }
 
-  .wx-toast {
-    position: fixed;
-    left: 50%;
-    bottom: 28px;
-    transform: translate(-50%, 12px);
-    background: var(--fg);
-    color: var(--bg);
-    font-size: 12.5px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    padding: 8px 14px;
-    z-index: 60;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
+  .wx-decode li.is-selected {
+    background: var(--surface-subtle);
+    box-shadow: inset 3px 0 0 var(--tok-color, var(--accent-blue));
   }
+  .wx-decode li.is-selected .wx-dec-code { border-color: var(--tok-color, var(--border-strong)); }
 
-  .wx-toast.is-visible {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
+  .wx.has-selection .wx-decode li:not(.is-selected) { opacity: 0.55; }
 
   .wx-dec-code {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -1737,6 +1727,22 @@ const faqItems = [
     .wx-timeline-ruler { margin-left: 0; }
     .wx-timeline-rowlabel { width: 74px; padding: 10px 8px; }
     .wx-category { max-width: none; width: 100%; }
+    .wx-vis-detail { grid-template-columns: minmax(0, 1fr); }
+    .wx-periods { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  @media (max-width: 480px) {
+    .wx-panel { padding: 16px 14px 20px; }
+    .wx-stat-band { grid-template-columns: 1fr; }
+    .wx-stat { border-right: none; border-bottom: 1px solid var(--border); padding: 14px 0; }
+    .wx-stat:first-child { padding-top: 0; }
+    .wx-stat:last-child { border-bottom: none; }
+    .wx-category { min-width: 0; }
+    .wx-runway-picker { flex-wrap: wrap; }
+    .wx-runway-readout { flex-basis: 100%; order: -1; }
+    .wx-timeline-rowlabel { width: 58px; font-size: 9px; padding: 10px 6px; }
+    .wx-decode li { padding: 10px 4px; }
+    .wx-strip { padding: 12px; line-height: 2.2; }
   }
 </style>
 
@@ -1851,35 +1857,19 @@ const faqItems = [
       });
     };
 
-    let toast = root.querySelector<HTMLElement>('.wx-toast');
-    if (!toast) {
-      toast = document.createElement('div');
-      toast.className = 'wx-toast';
-      toast.setAttribute('role', 'status');
-      toast.setAttribute('aria-live', 'polite');
-      root.appendChild(toast);
-    }
-    let toastTimer: number | undefined;
-    const showToast = (text: string) => {
-      if (!toast) return;
-      toast.textContent = text;
-      toast.classList.add('is-visible');
-      if (toastTimer) window.clearTimeout(toastTimer);
-      toastTimer = window.setTimeout(() => toast?.classList.remove('is-visible'), 1600);
-    };
+    let selectedId: string | null = null;
 
-    const flashActive = (id: string | null) => {
-      setActive(id, true);
-      window.setTimeout(() => setActive(id, false), 1100);
-    };
-
-    const copyGroup = async (raw: string) => {
-      try {
-        await navigator.clipboard.writeText(raw);
-        showToast(`Copied "${raw}"`);
-      } catch {
-        showToast(`${raw} — copy blocked by browser`);
+    const select = (id: string | null) => {
+      root.querySelectorAll('.wx-tok.is-selected, .wx-decode li.is-selected').forEach((el) => {
+        el.classList.remove('is-selected');
+      });
+      selectedId = selectedId === id ? null : id;
+      if (selectedId) {
+        root.querySelectorAll(`.wx-tok[data-tok="${selectedId}"], .wx-decode li[data-dec="${selectedId}"]`).forEach((el) => {
+          el.classList.add('is-selected');
+        });
       }
+      root.classList.toggle('has-selection', selectedId !== null);
     };
 
     root.querySelectorAll<HTMLButtonElement>('.wx-tok').forEach((token) => {
@@ -1891,8 +1881,7 @@ const faqItems = [
       token.addEventListener('click', () => {
         const row = root.querySelector(`.wx-decode li[data-dec="${id}"]`);
         row?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        flashActive(id);
-        void copyGroup(token.textContent?.trim() ?? '');
+        select(id);
       });
     });
 
@@ -1900,14 +1889,13 @@ const faqItems = [
       const id = row.dataset.dec ?? null;
       row.tabIndex = 0;
       row.setAttribute('role', 'button');
-      row.setAttribute('aria-label', `Jump to "${row.querySelector('.wx-dec-code')?.textContent ?? ''}" in the raw report and copy it`);
+      row.setAttribute('aria-label', `Highlight "${row.querySelector('.wx-dec-code')?.textContent ?? ''}" in the raw report`);
       row.addEventListener('mouseenter', () => setActive(id, true));
       row.addEventListener('mouseleave', () => setActive(id, false));
       const activate = () => {
         const token = root.querySelector<HTMLElement>(`.wx-tok[data-tok="${id}"]`);
         token?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        flashActive(id);
-        void copyGroup(row.querySelector('.wx-dec-code')?.textContent?.trim() ?? '');
+        select(id);
       };
       row.addEventListener('click', activate);
       row.addEventListener('keydown', (event) => {
