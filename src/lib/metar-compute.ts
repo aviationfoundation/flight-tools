@@ -198,5 +198,61 @@ export function advisories(report: DecodedMetar, elevationFt: number | null): Ad
     }
   }
 
+  out.push(...plausibilityFlags(report));
+
+  return out;
+}
+
+export function plausibilityFlags(report: DecodedMetar): Advisory[] {
+  const out: Advisory[] = [];
+
+  if (report.temperatureC != null && report.dewpointC != null && report.dewpointC - report.temperatureC > 0.5) {
+    out.push({
+      tone: 'warning',
+      title: 'Unrealistic METAR: dew point above temperature',
+      detail: `Dew point ${report.dewpointC.toFixed(1)}°C is higher than temperature ${report.temperatureC.toFixed(1)}°C. Dew point cannot exceed temperature — likely a transcription or sensor error.`,
+    });
+  }
+
+  if (report.temperatureC != null && (report.temperatureC < -62 || report.temperatureC > 58)) {
+    out.push({
+      tone: 'warning',
+      title: 'Unrealistic METAR: temperature out of range',
+      detail: `${report.temperatureC.toFixed(1)}°C is outside the range ever recorded at a surface station. Check the raw group for a misread digit.`,
+    });
+  }
+
+  if (report.altimeterInHg != null && (report.altimeterInHg < 25 || report.altimeterInHg > 32.5)) {
+    out.push({
+      tone: 'warning',
+      title: 'Unrealistic METAR: altimeter out of range',
+      detail: `${report.altimeterInHg.toFixed(2)} inHg falls outside the range of any recorded sea-level pressure. Check the raw group for a dropped or shifted digit.`,
+    });
+  }
+
+  if (report.wind?.speedKt != null && report.wind.speedKt > 150) {
+    out.push({
+      tone: 'warning',
+      title: 'Unrealistic METAR: wind speed out of range',
+      detail: `${report.wind.speedKt} kt sustained is far beyond any surface report on record. Check the raw group for a unit or digit error.`,
+    });
+  }
+
+  if (report.wind?.gustKt != null && report.wind.speedKt != null && report.wind.gustKt <= report.wind.speedKt) {
+    out.push({
+      tone: 'warning',
+      title: 'Unrealistic METAR: gust not above sustained wind',
+      detail: `Gust of ${report.wind.gustKt} kt is not greater than the sustained ${report.wind.speedKt} kt. A gust group only appears when it exceeds the sustained speed.`,
+    });
+  }
+
+  if (report.clouds.some((c) => c.baseFt != null && c.baseFt > 60000)) {
+    out.push({
+      tone: 'warning',
+      title: 'Unrealistic METAR: cloud base out of range',
+      detail: 'A reported cloud base above 60,000 ft is beyond what a station\'s ceilometer measures — check the raw group.',
+    });
+  }
+
   return out;
 }

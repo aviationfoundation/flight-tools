@@ -331,6 +331,31 @@ const metarStrip = tokenStrip(report.raw, report.tokens);
 const tafStrip = taf ? tokenStrip(taf.raw, taf.tokens) : null;
 
 const categoryClass = `cat-${category.toLowerCase()}`;
+
+const faqItems = [
+  {
+    q: 'How is the flight category decided?',
+    a: 'From the worse of ceiling and prevailing visibility, using the FAA thresholds: LIFR below 500 ft or 1 sm, IFR below 1,000 ft or 3 sm, MVFR at or below 3,000 ft or 5 sm, VFR above both. A ceiling is the lowest broken, overcast or obscured layer — few and scattered layers never make a ceiling.',
+  },
+  {
+    q: 'What is measured, and what is derived?',
+    a: 'Everything in the raw report is measured or observed at the field. Pressure altitude, density altitude, relative humidity, estimated cloud base and the runway wind components are computed here from those numbers using standard approximations. They are planning aids, not performance data for a specific aircraft.',
+  },
+  {
+    q: 'Why does the crosswind not match what the tower says?',
+    a: "Wind direction in a METAR is referenced to true north. Runway numbers are magnetic. The crosswind figure ignores magnetic variation, so at fields with large variation treat it as close rather than exact — the tower's spoken wind is already magnetic and will differ.",
+  },
+  {
+    q: 'What does it mean when a value is flagged as unrealistic?',
+    a: 'Some flagged conditions above are sanity checks on the report itself, not on the weather — a dew point above temperature, a wind gust no higher than the sustained speed, or a value outside anything a surface station has ever recorded. Those point at a likely transcription or sensor error in the source feed, not at conditions to plan around.',
+  },
+  {
+    q: 'Where does this come from, and how fresh is it?',
+    a: fetchedAt
+      ? `Observations and forecasts come from the NOAA Aviation Weather Center feed, cached for a few minutes. Retrieved ${new Date(fetchedAt).toISOString().replace('T', ' ').slice(0, 16)}Z. This is a decoding tool for study and planning, not a weather briefing — nothing here substitutes for an official source before a flight.`
+      : 'Observations and forecasts come from the NOAA Aviation Weather Center feed, cached for a few minutes. This is a decoding tool for study and planning, not a weather briefing — nothing here substitutes for an official source before a flight.',
+  },
+];
 ---
 
 <article class="wx" data-obs-iso={observedAt ? observedAt.toISOString() : undefined}>
@@ -847,43 +872,18 @@ const categoryClass = `cat-${category.toLowerCase()}`;
   <section class="wx-notes">
     <header class="wx-panel-head">
       <span class="col">07 — How to read this</span>
+      <span class="wx-panel-note">Frequently asked</span>
     </header>
-    <div class="wx-notes-grid">
-      <div>
-        <h3>Flight categories</h3>
-        <p>
-          Categories come from the worse of ceiling and prevailing visibility, using the FAA
-          thresholds: LIFR below 500 ft or 1 sm, IFR below 1,000 ft or 3 sm, MVFR at or below
-          3,000 ft or 5 sm, VFR above both. A ceiling is the lowest broken, overcast or obscured
-          layer — few and scattered layers never make a ceiling.
-        </p>
-      </div>
-      <div>
-        <h3>What is measured and what is derived</h3>
-        <p>
-          Everything in the raw report is measured or observed at the field. Pressure altitude,
-          density altitude, relative humidity, estimated cloud base and the runway wind
-          components are computed here from those numbers using standard approximations. They
-          are planning aids, not performance data for a specific aircraft.
-        </p>
-      </div>
-      <div>
-        <h3>True versus magnetic</h3>
-        <p>
-          Wind direction in a METAR is referenced to true north. Runway numbers are magnetic. The
-          crosswind figure ignores magnetic variation, so at fields with large variation treat it
-          as close rather than exact — the tower's spoken wind is already magnetic and will differ.
-        </p>
-      </div>
-      <div>
-        <h3>Source and freshness</h3>
-        <p>
-          Observations and forecasts come from the NOAA Aviation Weather Center feed, cached for
-          a few minutes. This is a decoding tool for study and planning. It is not a weather
-          briefing, and nothing here substitutes for an official source before a flight.
-          {fetchedAt && <span class="num"> Retrieved {new Date(fetchedAt).toISOString().replace('T', ' ').slice(0, 16)}Z.</span>}
-        </p>
-      </div>
+    <div class="wx-faq">
+      {faqItems.map((item, index) => (
+        <details class="wx-faq-item" open={index === 0}>
+          <summary>
+            <span class="wx-faq-q">{item.q}</span>
+            <span class="wx-faq-icon" aria-hidden="true"></span>
+          </summary>
+          <p class="wx-faq-a">{item.a}</p>
+        </details>
+      ))}
     </div>
   </section>
 </article>
@@ -998,10 +998,11 @@ const categoryClass = `cat-${category.toLowerCase()}`;
   }
 
   .wx-stat {
-    padding: 18px 20px 20px 0;
+    padding: 18px 20px 20px 20px;
     border-right: 1px solid var(--border);
   }
 
+  .wx-stat:first-child { padding-left: 0; }
   .wx-stat:last-child { border-right: none; }
 
   .wx-stat-value {
@@ -1444,11 +1445,39 @@ const categoryClass = `cat-${category.toLowerCase()}`;
     border-bottom: 1px solid var(--border);
     font-size: 13px;
     scroll-margin-top: 90px;
+    cursor: pointer;
     transition: background-color var(--dur-fast) var(--ease-out);
+  }
+
+  .wx-decode li:hover,
+  .wx-decode li:focus-visible {
+    background: var(--surface-subtle);
+    outline: none;
   }
 
   .wx-decode li.is-active { background: var(--surface-subtle); }
   .wx-decode li.is-active .wx-dec-code { border-color: var(--tok-color, var(--border-strong)); }
+
+  .wx-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 28px;
+    transform: translate(-50%, 12px);
+    background: var(--fg);
+    color: var(--bg);
+    font-size: 12.5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    padding: 8px 14px;
+    z-index: 60;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
+  }
+
+  .wx-toast.is-visible {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 
   .wx-dec-code {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -1628,23 +1657,70 @@ const categoryClass = `cat-${category.toLowerCase()}`;
 
   .wx-notes { margin-top: 48px; padding-bottom: 20px; }
 
-  .wx-notes-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 28px;
+  .wx-faq { border-top: 1px solid var(--border); }
+
+  .wx-faq-item {
+    border-bottom: 1px solid var(--border);
   }
 
-  .wx-notes-grid h3 {
-    font-size: 13px;
+  .wx-faq-item summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 15px 2px;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .wx-faq-item summary::-webkit-details-marker { display: none; }
+
+  .wx-faq-q {
+    font-size: 13.5px;
     font-weight: 600;
-    margin: 0 0 8px;
+    color: var(--fg);
   }
 
-  .wx-notes-grid p {
-    margin: 0;
+  .wx-faq-icon {
+    position: relative;
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+  }
+
+  .wx-faq-icon::before,
+  .wx-faq-icon::after {
+    content: '';
+    position: absolute;
+    background: var(--text-muted);
+    transition: transform var(--dur-fast) var(--ease-out);
+  }
+
+  .wx-faq-icon::before {
+    left: 0;
+    top: 6px;
+    width: 14px;
+    height: 1.4px;
+  }
+
+  .wx-faq-icon::after {
+    left: 6px;
+    top: 0;
+    width: 1.4px;
+    height: 14px;
+  }
+
+  .wx-faq-item[open] .wx-faq-icon::after { transform: rotate(90deg); opacity: 0; }
+
+  .wx-faq-item summary:hover .wx-faq-q { color: var(--accent-blue); }
+
+  .wx-faq-a {
+    margin: 0 0 18px;
+    padding-right: 30px;
     font-size: 12.5px;
-    line-height: 1.6;
+    line-height: 1.65;
     color: var(--text-muted);
+    max-width: 72ch;
   }
 
   @media (max-width: 1080px) {
@@ -1775,6 +1851,37 @@ const categoryClass = `cat-${category.toLowerCase()}`;
       });
     };
 
+    let toast = root.querySelector<HTMLElement>('.wx-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.className = 'wx-toast';
+      toast.setAttribute('role', 'status');
+      toast.setAttribute('aria-live', 'polite');
+      root.appendChild(toast);
+    }
+    let toastTimer: number | undefined;
+    const showToast = (text: string) => {
+      if (!toast) return;
+      toast.textContent = text;
+      toast.classList.add('is-visible');
+      if (toastTimer) window.clearTimeout(toastTimer);
+      toastTimer = window.setTimeout(() => toast?.classList.remove('is-visible'), 1600);
+    };
+
+    const flashActive = (id: string | null) => {
+      setActive(id, true);
+      window.setTimeout(() => setActive(id, false), 1100);
+    };
+
+    const copyGroup = async (raw: string) => {
+      try {
+        await navigator.clipboard.writeText(raw);
+        showToast(`Copied "${raw}"`);
+      } catch {
+        showToast(`${raw} — copy blocked by browser`);
+      }
+    };
+
     root.querySelectorAll<HTMLButtonElement>('.wx-tok').forEach((token) => {
       const id = token.dataset.tok ?? null;
       token.addEventListener('mouseenter', () => setActive(id, true));
@@ -1784,13 +1891,31 @@ const categoryClass = `cat-${category.toLowerCase()}`;
       token.addEventListener('click', () => {
         const row = root.querySelector(`.wx-decode li[data-dec="${id}"]`);
         row?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        flashActive(id);
+        void copyGroup(token.textContent?.trim() ?? '');
       });
     });
 
     root.querySelectorAll<HTMLElement>('.wx-decode li').forEach((row) => {
       const id = row.dataset.dec ?? null;
+      row.tabIndex = 0;
+      row.setAttribute('role', 'button');
+      row.setAttribute('aria-label', `Jump to "${row.querySelector('.wx-dec-code')?.textContent ?? ''}" in the raw report and copy it`);
       row.addEventListener('mouseenter', () => setActive(id, true));
       row.addEventListener('mouseleave', () => setActive(id, false));
+      const activate = () => {
+        const token = root.querySelector<HTMLElement>(`.wx-tok[data-tok="${id}"]`);
+        token?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        flashActive(id);
+        void copyGroup(row.querySelector('.wx-dec-code')?.textContent?.trim() ?? '');
+      };
+      row.addEventListener('click', activate);
+      row.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          activate();
+        }
+      });
     });
   }
 
