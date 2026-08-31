@@ -1,0 +1,615 @@
+---
+export const prerender = false;
+
+import Layout from '../../layouts/Layout.astro';
+import MetarDecoder from '../../components/MetarDecoder.astro';
+import { decodeMetar, decodeTaf, type DecodedMetar, type DecodedTaf } from '../../lib/metar';
+import { fetchObservation } from '../../lib/wx-source';
+import { getStation, normalizeStationId, searchStations } from '../../lib/wx-stations';
+
+const env = Astro.locals.runtime.env;
+const params = Astro.url.searchParams;
+const stationParam = (params.get('station') ?? '').trim();
+const rawParam = (params.get('raw') ?? '').trim();
+
+interface StationInfo {
+  icao: string;
+  name: string | null;
+  lat: number | null;
+  lon: number | null;
+  elevationFt: number | null;
+}
+
+let report: DecodedMetar | null = null;
+let taf: DecodedTaf | null = null;
+let stationInfo: StationInfo | null = null;
+let fetchedAt: string | null = null;
+let errorMessage: string | null = null;
+let decodedFrom: 'live' | 'paste' | null = null;
+
+function splitPaste(text: string): { metar: string | null; taf: string | null } {
+  const cleaned = text.replace(/\r/g, '').replace(/=/g, '\n').trim();
+  const lines = cleaned.split('\n').map((line) => line.trim()).filter(Boolean);
+
+  const metarLines: string[] = [];
+  const tafLines: string[] = [];
+  let inTaf = false;
+
+  for (const line of lines) {
+    const tafStart = /\bTAF\b/i.exec(line);
+    if (!inTaf && tafStart) {
+      const before = line.slice(0, tafStart.index).trim();
+      if (before) metarLines.push(before);
+      tafLines.push(line.slice(tafStart.index).trim());
+      inTaf = true;
+      continue;
+    }
+    (inTaf ? tafLines : metarLines).push(line);
+  }
+
+  return {
+    metar: metarLines.length ? metarLines.join(' ') : null,
+    taf: tafLines.length ? tafLines.join(' ') : null,
+  };
+}
+
+if (rawParam) {
+  decodedFrom = 'paste';
+  const parts = splitPaste(rawParam);
+  if (parts.taf) taf = decodeTaf(parts.taf);
+
+  if (parts.metar) {
+    report = decodeMetar(parts.metar);
+  } else if (taf?.station) {
+    const bundle = await fetchObservation(taf.station);
+    if (bundle.metarRaw) {
+      report = decodeMetar(bundle.metarRaw);
+      stationInfo = bundle.station;
+      fetchedAt = bundle.fetchedAt;
+    }
+  }
+
+  if (!report) {
+    errorMessage = 'That paste has no observation in it. Include the METAR line, or search for the station instead.';
+  } else if (!stationInfo && report.station && env.DB) {
+    const known = await getStation(env.DB, report.station);
+    if (known) {
+      stationInfo = { icao: known.icao, name: known.name, lat: known.lat, lon: known.lon, elevationFt: known.elevationFt };
+    }
+  }
+} else if (stationParam) {
+  decodedFrom = 'live';
+  let id = normalizeStationId(stationParam);
+
+  if (!/^[A-Za-z0-9]{3,4}$/.test(stationParam) && env.DB) {
+    const [match] = await searchStations(env.DB, stationParam, 1);
+    if (match) id = match.icao;
+  }
+
+  if (!id || id.length < 3) {
+    errorMessage = 'No station matched that. Try a four-letter ICAO code such as KJFK or EGLL, or an airport name.';
+  } else {
+    const bundle = await fetchObservation(id);
+    fetchedAt = bundle.fetchedAt;
+    if (bundle.metarRaw) {
+      report = decodeMetar(bundle.metarRaw);
+      if (bundle.tafRaw) taf = decodeTaf(bundle.tafRaw);
+      stationInfo = bundle.station;
+      if (!stationInfo?.elevationFt && env.DB) {
+        const known = await getStation(env.DB, id);
+        if (known) {
+          stationInfo = {
+            icao: stationInfo?.icao ?? known.icao,
+            name: stationInfo?.name ?? known.name,
+            lat: stationInfo?.lat ?? known.lat,
+            lon: stationInfo?.lon ?? known.lon,
+            elevationFt: stationInfo?.elevationFt ?? known.elevationFt,
+          };
+        }
+      }
+    } else if (bundle.error === 'no_observation') {
+      errorMessage = `No current observation is published for ${id}. Not every field reports, and reporting stations occasionally go offline.`;
+    } else {
+      errorMessage = 'The observation feed did not answer. It is a public service and does go down; try again shortly, or paste a report below.';
+    }
+  }
+}
+
+const examples = [
+  { icao: 'KJFK', note: 'Coastal, busy' },
+  { icao: 'KDEN', note: 'High elevation' },
+  { icao: 'KASE', note: 'Mountain field' },
+  { icao: 'KSFO', note: 'Marine layer' },
+  { icao: 'EGLL', note: 'Metric, QNH' },
+  { icao: 'PANC', note: 'Sub-arctic' },
+];
+
+const pageTitle = report?.station
+  ? `${report.station} METAR decoded — aviation.foundation`
+  : 'METAR & TAF Decoder — aviation.foundation';
+---
+
+<Layout
+  title={pageTitle}
+  description="Decode any METAR or TAF into plain language, with a wind rose, runway crosswind components, a cloud-layer profile, density altitude, and a forecast timeline. Free, no account, no advertising."
+  currentPath="/tools/metar"
+>
+  <div class="page-container container-site px-site">
+
+    <header class="page-header">
+      <div class="eyebrow">Flight planning tool</div>
+      <h1 class="serif page-title">METAR &amp; TAF Decoder</h1>
+      <p class="page-lead">
+        Paste any observation or look up a station, and read it as instruments rather than as a
+        line of code. Wind on your runway, cloud layers by height, density altitude, and the
+        forecast laid out on a timeline — every figure traced back to the group it came from.
+      </p>
+    </header>
+
+    <section class="wx-console" aria-label="Look up a report">
+      <form class="wx-lookup" method="get" action="/tools/metar" autocomplete="off">
+        <div class="wx-field">
+          <label class="col" for="wx-station">Station</label>
+          <div class="wx-input-wrap">
+            <input
+              type="text"
+              id="wx-station"
+              name="station"
+              class="wx-input num"
+              placeholder="KJFK, EGLL, or an airport name"
+              value={decodedFrom === 'live' ? stationParam : ''}
+              maxlength="40"
+              spellcheck="false"
+              autocapitalize="characters"
+              role="combobox"
+              aria-expanded="false"
+              aria-controls="wx-suggest"
+              aria-autocomplete="list"
+            />
+            <ul id="wx-suggest" class="wx-suggest" role="listbox" aria-label="Station suggestions" hidden></ul>
+          </div>
+        </div>
+        <button type="submit" class="btn-solid wx-submit">Decode</button>
+      </form>
+
+      <div class="wx-console-aside">
+        <div class="wx-examples">
+          <span class="col">Try</span>
+          {examples.map((example) => (
+            <a href={`/tools/metar?station=${example.icao}`} class="wx-example num" title={example.note}>{example.icao}</a>
+          ))}
+        </div>
+        <div class="wx-recent" id="wx-recent" hidden>
+          <span class="col">Recent</span>
+          <span class="wx-recent-items" id="wx-recent-items"></span>
+        </div>
+      </div>
+
+      <details class="wx-paste" open={decodedFrom === 'paste'}>
+        <summary>Paste a raw report instead</summary>
+        <form method="get" action="/tools/metar" class="wx-paste-form">
+          <label class="col" for="wx-raw">Raw METAR, TAF, or both</label>
+          <textarea
+            id="wx-raw"
+            name="raw"
+            class="wx-textarea num"
+            rows="4"
+            spellcheck="false"
+            placeholder="METAR KJFK 311851Z 24012G21KT 10SM FEW045 SCT250 24/13 A2998 RMK AO2 SLP152"
+          >{decodedFrom === 'paste' ? rawParam : ''}</textarea>
+          <div class="wx-paste-actions">
+            <p class="wx-paste-help">
+              Line breaks are fine. A forecast pasted on its own will pull in the matching
+              observation so the whole page still has something to stand on.
+            </p>
+            <button type="submit" class="btn-outline">Decode paste</button>
+          </div>
+        </form>
+      </details>
+    </section>
+
+    {errorMessage && (
+      <div class="form-alert wx-alert" data-tone="warning" role="status">{errorMessage}</div>
+    )}
+
+    {report ? (
+      <MetarDecoder report={report} taf={taf} station={stationInfo} fetchedAt={fetchedAt} />
+    ) : (
+      !errorMessage && (
+        <section class="wx-intro">
+          <div class="wx-intro-grid">
+            <div>
+              <div class="col">What it decodes</div>
+              <p>
+                The full METAR body — wind, visibility, runway visual range, present weather, sky
+                condition, temperature, pressure — plus the US remark set that automated stations
+                append after RMK, and TAF change groups including FM, TEMPO, BECMG and PROB.
+              </p>
+            </div>
+            <div>
+              <div class="col">What it computes</div>
+              <p>
+                Flight category from ceiling and visibility, headwind and crosswind on any runway
+                you pick, pressure and density altitude against field elevation, relative humidity,
+                temperature/dew point spread and an estimated convective cloud base.
+              </p>
+            </div>
+            <div>
+              <div class="col">What it will not do</div>
+              <p>
+                Guess. Groups this decoder does not recognise are shown unchanged and labelled as
+                undecoded rather than being approximated, and derived figures are labelled as
+                derived. This is a study and planning tool, not a weather briefing.
+              </p>
+            </div>
+          </div>
+        </section>
+      )
+    )}
+  </div>
+</Layout>
+
+<style>
+  .page-container { padding-top: 56px; padding-bottom: 90px; }
+
+  .page-header { max-width: 760px; }
+
+  .page-title {
+    font-size: clamp(34px, 5vw, 54px);
+    line-height: 1.08;
+    margin: 12px 0 0;
+    letter-spacing: -0.01em;
+  }
+
+  .page-lead {
+    margin: 18px 0 0;
+    font-size: 16px;
+    line-height: 1.65;
+    color: var(--text-muted);
+  }
+
+  .wx-console {
+    margin-top: 40px;
+    border-top: 1px solid var(--border-strong);
+    padding-top: 26px;
+  }
+
+  .wx-lookup {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    max-width: 720px;
+  }
+
+  .wx-field { flex: 1; }
+
+  .wx-input-wrap { position: relative; margin-top: 8px; }
+
+  .wx-input {
+    width: 100%;
+    height: 54px;
+    padding: 0 16px;
+    font-size: 16px;
+    font-family: var(--font-sans);
+    color: var(--fg);
+    background: var(--surface-card);
+    border: 1px solid var(--border-input);
+    border-radius: 0;
+    transition: border-color var(--dur-fast) var(--ease-out);
+  }
+
+  .wx-input:focus {
+    outline: none;
+    border-color: var(--fg);
+  }
+
+  .wx-submit { height: 54px; padding: 0 28px; }
+
+  .wx-console-aside {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 32px;
+    margin-top: 16px;
+    align-items: center;
+  }
+
+  .wx-examples,
+  .wx-recent {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .wx-example {
+    font-size: 12px;
+    padding: 3px 8px;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    transition: border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+  }
+
+  .wx-example:hover { border-color: var(--border-strong); color: var(--fg); }
+
+  .wx-paste { margin-top: 26px; max-width: 720px; }
+
+  .wx-paste summary {
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-muted);
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .wx-paste summary:hover { color: var(--fg); }
+
+  .wx-paste-form { padding-top: 12px; }
+
+  .wx-textarea {
+    width: 100%;
+    margin-top: 8px;
+    padding: 12px 14px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--fg);
+    background: var(--surface-card);
+    border: 1px solid var(--border-input);
+    border-radius: 0;
+    resize: vertical;
+  }
+
+  .wx-textarea:focus { outline: none; border-color: var(--fg); }
+
+  .wx-paste-actions {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 20px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+
+  .wx-paste-help {
+    margin: 0;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--text-subtle);
+    max-width: 44ch;
+  }
+
+  .wx-alert { margin-top: 26px; max-width: 720px; }
+
+  .wx-intro { margin-top: 52px; border-top: 1px solid var(--border); padding-top: 28px; }
+
+  .wx-intro-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 32px;
+  }
+
+  .wx-intro-grid p {
+    margin: 10px 0 0;
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--text-muted);
+  }
+
+  @media (max-width: 640px) {
+    .wx-lookup { flex-direction: column; align-items: stretch; }
+    .wx-submit { width: 100%; }
+  }
+</style>
+
+<style is:global>
+  #wx-suggest {
+    position: absolute;
+    top: calc(100% - 1px);
+    left: 0;
+    right: 0;
+    z-index: 40;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    max-height: 320px;
+    overflow-y: auto;
+    background: var(--surface-card);
+    border: 1px solid var(--fg);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+  }
+
+  #wx-suggest li {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 10px 14px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+
+  #wx-suggest li:last-child { border-bottom: none; }
+
+  #wx-suggest li[aria-selected='true'],
+  #wx-suggest li:hover {
+    background: var(--surface-subtle);
+  }
+
+  #wx-suggest .sug-code {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    min-width: 44px;
+  }
+
+  #wx-suggest .sug-name {
+    color: var(--fg);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  #wx-suggest .sug-where {
+    color: var(--text-muted);
+    font-size: 11.5px;
+    white-space: nowrap;
+  }
+
+  #wx-recent-items { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+
+  #wx-recent-items a {
+    font-size: 12px;
+    padding: 3px 8px;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  #wx-recent-items a:hover { border-color: var(--border-strong); color: var(--fg); }
+</style>
+
+<script>
+  const RECENT_KEY = 'avi_wx_recent';
+  const MAX_RECENT = 6;
+
+  let debounce: number | undefined;
+
+  function readRecent(): Array<{ icao: string; name: string }> {
+    try {
+      const stored = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
+      return Array.isArray(stored) ? stored.filter((item) => item && typeof item.icao === 'string').slice(0, MAX_RECENT) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function rememberStation(icao: string, name: string) {
+    try {
+      const list = readRecent().filter((item) => item.icao !== icao);
+      list.unshift({ icao, name });
+      localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, MAX_RECENT)));
+    } catch {
+    }
+  }
+
+  function setupWxConsole() {
+    const input = document.getElementById('wx-station') as HTMLInputElement | null;
+    const list = document.getElementById('wx-suggest') as HTMLUListElement | null;
+    const recentWrap = document.getElementById('wx-recent');
+    const recentItems = document.getElementById('wx-recent-items');
+    if (!input || !list) return;
+
+    if (recentWrap && recentItems) {
+      const recent = readRecent();
+      if (recent.length) {
+        recentItems.innerHTML = '';
+        for (const item of recent) {
+          const link = document.createElement('a');
+          link.href = `/tools/metar?station=${encodeURIComponent(item.icao)}`;
+          link.textContent = item.icao;
+          link.title = item.name || item.icao;
+          recentItems.appendChild(link);
+        }
+        recentWrap.hidden = false;
+      }
+    }
+
+    const decoded = document.querySelector<HTMLElement>('.wx');
+    const decodedStation = decoded?.querySelector<HTMLElement>('.wx-station')?.textContent?.trim();
+    const decodedName = decoded?.querySelector<HTMLElement>('.wx-station-name')?.textContent?.trim();
+    if (decodedStation && /^[A-Z0-9]{3,4}$/.test(decodedStation)) {
+      rememberStation(decodedStation, (decodedName || '').split(' · ')[0]);
+    }
+
+    let items: Array<{ icao: string; name: string; city: string | null; country: string | null }> = [];
+    let cursor = -1;
+
+    const close = () => {
+      list.hidden = true;
+      list.innerHTML = '';
+      input.setAttribute('aria-expanded', 'false');
+      cursor = -1;
+      items = [];
+    };
+
+    const choose = (index: number) => {
+      const item = items[index];
+      if (!item) return;
+      input.value = item.icao;
+      rememberStation(item.icao, item.name);
+      close();
+      input.form?.submit();
+    };
+
+    const render = () => {
+      list.innerHTML = '';
+      items.forEach((item, index) => {
+        const row = document.createElement('li');
+        row.setAttribute('role', 'option');
+        row.setAttribute('aria-selected', String(index === cursor));
+
+        const code = document.createElement('span');
+        code.className = 'sug-code';
+        code.textContent = item.icao;
+
+        const name = document.createElement('span');
+        name.className = 'sug-name';
+        name.textContent = item.name;
+
+        const where = document.createElement('span');
+        where.className = 'sug-where';
+        where.textContent = [item.city, item.country].filter(Boolean).join(', ');
+
+        row.append(code, name, where);
+        row.addEventListener('mousedown', (event) => {
+          event.preventDefault();
+          choose(index);
+        });
+        list.appendChild(row);
+      });
+      list.hidden = items.length === 0;
+      input.setAttribute('aria-expanded', String(items.length > 0));
+    };
+
+    const search = async (query: string) => {
+      try {
+        const response = await fetch(`/api/wx/stations?q=${encodeURIComponent(query)}`);
+        if (!response.ok) return close();
+        const data = await response.json();
+        items = Array.isArray(data.items) ? data.items : [];
+        cursor = -1;
+        render();
+      } catch {
+        close();
+      }
+    };
+
+    input.addEventListener('input', () => {
+      const query = input.value.trim();
+      if (debounce) window.clearTimeout(debounce);
+      if (query.length < 2) return close();
+      debounce = window.setTimeout(() => search(query), 160);
+    });
+
+    input.addEventListener('keydown', (event) => {
+      if (list.hidden || !items.length) return;
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        cursor = event.key === 'ArrowDown' ? (cursor + 1) % items.length : (cursor - 1 + items.length) % items.length;
+        render();
+        return;
+      }
+      if (event.key === 'Enter' && cursor >= 0) {
+        event.preventDefault();
+        choose(cursor);
+        return;
+      }
+      if (event.key === 'Escape') close();
+    });
+
+    input.addEventListener('blur', () => window.setTimeout(close, 120));
+  }
+
+  setupWxConsole();
+  document.addEventListener('astro:after-swap', setupWxConsole);
+</script>

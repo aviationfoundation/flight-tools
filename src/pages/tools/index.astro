@@ -1,0 +1,202 @@
+---
+export const prerender = false;
+
+import Layout from '../../layouts/Layout.astro';
+
+const tools = [
+  {
+    href: '/tools/metar',
+    eyebrow: 'Weather',
+    title: 'METAR & TAF Decoder',
+    description:
+      'Read any observation or forecast as instruments instead of code. Wind rose with runway crosswind components, cloud layers drawn by height and coverage, density altitude against field elevation, and the TAF laid out on a timeline.',
+    points: [
+      'Full METAR body plus the US remark set',
+      'TAF change groups on a timeline coloured by flight category',
+      'Crosswind and headwind on any runway you pick',
+      'Works from a paste, with no account and no advertising',
+    ],
+    status: 'Live',
+  },
+];
+
+const planned = [
+  'Weight and balance worksheet, aircraft-agnostic',
+  'Takeoff and landing distance from a published chart, with the derivation shown',
+  'Currency and endorsement tracker driven by a logbook export',
+];
+---
+
+<Layout
+  title="Tools — aviation.foundation"
+  description="Free aviation tools published by aviation.foundation. A METAR and TAF decoder that reads observations as instruments, with no account and no advertising."
+  currentPath="/tools"
+>
+  <div class="page-container container-site px-site">
+    <header class="page-header">
+      <div class="eyebrow">Utilities</div>
+      <h1 class="serif page-title">Tools</h1>
+      <p class="page-lead">
+        Small, exact utilities for people actually training and flying. Same rules as the rest of
+        this site: no account to use them, no advertising in them, and every derived number
+        labelled as derived.
+      </p>
+    </header>
+
+    <section class="tool-list">
+      {tools.map((tool) => (
+        <a href={tool.href} class="tool-card">
+          <div class="tool-card-main">
+            <div class="tool-card-top">
+              <span class="col">{tool.eyebrow}</span>
+              <span class="tool-status">{tool.status}</span>
+            </div>
+            <h2 class="serif tool-title">{tool.title}</h2>
+            <p class="tool-description">{tool.description}</p>
+          </div>
+          <ul class="tool-points">
+            {tool.points.map((point) => (
+              <li>{point}</li>
+            ))}
+          </ul>
+          <span class="tool-cta">Open the decoder →</span>
+        </a>
+      ))}
+    </section>
+
+    <section class="tool-planned">
+      <div class="col">Not built yet</div>
+      <p class="tool-planned-lead">
+        Named here so the gap is visible rather than implied. Nothing below exists.
+      </p>
+      <ul>
+        {planned.map((item) => (
+          <li>{item}</li>
+        ))}
+      </ul>
+    </section>
+  </div>
+</Layout>
+
+<style>
+  .page-container { padding-top: 56px; padding-bottom: 96px; }
+  .page-header { max-width: 720px; }
+
+  .page-title {
+    font-size: clamp(34px, 5vw, 54px);
+    line-height: 1.08;
+    margin: 12px 0 0;
+    letter-spacing: -0.01em;
+  }
+
+  .page-lead {
+    margin: 18px 0 0;
+    font-size: 16px;
+    line-height: 1.65;
+    color: var(--text-muted);
+  }
+
+  .tool-list { margin-top: 44px; border-top: 1px solid var(--border-strong); }
+
+  .tool-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: 40px;
+    padding: 32px 0 30px;
+    border-bottom: 1px solid var(--border);
+    color: inherit;
+    position: relative;
+  }
+
+  .tool-card:hover { color: inherit; }
+  .tool-card:hover .tool-title { color: var(--accent-blue); }
+  .tool-card:hover .tool-cta { border-color: var(--border-strong); }
+
+  .tool-card-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .tool-status {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--success);
+    border: 1px solid var(--success-border);
+    background: var(--success-bg);
+    padding: 2px 7px;
+  }
+
+  .tool-title {
+    font-size: clamp(24px, 3vw, 32px);
+    line-height: 1.15;
+    margin: 14px 0 0;
+    transition: color var(--dur-fast) var(--ease-out);
+  }
+
+  .tool-description {
+    margin: 12px 0 0;
+    font-size: 14.5px;
+    line-height: 1.65;
+    color: var(--text-muted);
+    max-width: 52ch;
+  }
+
+  .tool-points {
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 0;
+    align-self: start;
+  }
+
+  .tool-points li {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    padding: 8px 0 8px 18px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+
+  .tool-points li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 15px;
+    width: 6px;
+    height: 1px;
+    background: var(--text-muted);
+  }
+
+  .tool-cta {
+    grid-column: 1 / -1;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--accent-blue);
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+    transition: border-color var(--dur-fast) var(--ease-out);
+  }
+
+  .tool-planned { margin-top: 56px; max-width: 640px; }
+
+  .tool-planned-lead {
+    margin: 10px 0 16px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .tool-planned ul { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
+
+  .tool-planned li {
+    font-size: 13px;
+    color: var(--text-subtle);
+    padding: 11px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  @media (max-width: 780px) {
+    .tool-card { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+  }
+</style>

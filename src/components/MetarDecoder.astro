@@ -1,0 +1,1799 @@
+---
+import type { DecodedMetar, DecodedTaf, CloudLayer, TafPeriod } from '../lib/metar';
+import { resolveTime, formatMiles, compassPoint, cloudText } from '../lib/metar';
+import {
+  flightCategory,
+  ceilingFt,
+  relativeHumidity,
+  pressureAltitudeFt,
+  densityAltitudeFt,
+  estimatedCloudBaseFt,
+  windComponents,
+  bestRunway,
+  windChillC,
+  advisories,
+  CATEGORY_MEANING,
+  type FlightCategory,
+} from '../lib/metar-compute';
+
+interface StationInfo {
+  icao: string;
+  name: string | null;
+  lat: number | null;
+  lon: number | null;
+  elevationFt: number | null;
+}
+
+interface Props {
+  report: DecodedMetar;
+  taf: DecodedTaf | null;
+  station: StationInfo | null;
+  fetchedAt: string | null;
+}
+
+const { report, taf, station, fetchedAt } = Astro.props;
+
+const now = new Date();
+const observedAt = resolveTime(report.time, now);
+const elevationFt = station?.elevationFt ?? null;
+
+const category = flightCategory(report);
+const ceiling = ceilingFt(report.clouds);
+const humidity = relativeHumidity(report.temperatureC, report.dewpointC);
+const pressureAlt = pressureAltitudeFt(elevationFt, report.altimeterInHg);
+const densityAlt = densityAltitudeFt(pressureAlt, report.temperatureC);
+const estimatedBase = estimatedCloudBaseFt(report.temperatureC, report.dewpointC);
+const chill = windChillC(report.temperatureC, report.wind?.speedKt ?? null);
+const spread =
+  report.temperatureC != null && report.dewpointC != null ? report.temperatureC - report.dewpointC : null;
+const flags = advisories(report, elevationFt);
+
+const defaultRunway = bestRunway(report.wind);
+const components = windComponents(report.wind, defaultRunway * 10);
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+function fmtInt(n: number | null | undefined): string {
+  return n == null ? '—' : Math.round(n).toLocaleString('en-US');
+}
+
+const windHeadline = !report.wind
+  ? { value: '—', unit: '' }
+  : report.wind.calm
+    ? { value: 'Calm', unit: '' }
+    : {
+        value: report.wind.gustKt != null ? `${report.wind.speedKt}G${report.wind.gustKt}` : String(report.wind.speedKt ?? '—'),
+        unit: report.wind.variable
+          ? 'kt · variable'
+          : report.wind.directionDeg != null
+            ? `kt · ${pad2(report.wind.directionDeg)}° ${compassPoint(report.wind.directionDeg)}`
+            : 'kt',
+      };
+
+const visHeadline = report.visibility
+  ? report.visibility.statuteMiles != null && report.visibility.statuteMiles >= 0
+    ? {
+        value: `${report.visibility.greaterThan ? '10+' : formatMiles(Math.round(report.visibility.statuteMiles * 100) / 100)}`,
+        unit: 'statute miles',
+      }
+    : { value: '—', unit: '' }
+  : { value: '—', unit: 'not reported' };
+
+const ceilingHeadline = ceiling != null
+  ? { value: fmtInt(ceiling), unit: 'ft AGL' }
+  : report.clouds.some((c) => c.oktas === 0) || report.cavok
+    ? { value: 'Clear', unit: 'no ceiling' }
+    : { value: '—', unit: 'not reported' };
+
+const tempHeadline = report.temperatureC != null
+  ? { value: `${report.temperatureC > 0 ? '' : ''}${Math.round(report.temperatureC * 10) / 10}°`, unit: `C · dew ${report.dewpointC != null ? `${Math.round(report.dewpointC * 10) / 10}°` : '—'}` }
+  : { value: '—', unit: '' };
+
+const pressureHeadline = report.altimeterInHg != null
+  ? { value: report.altimeterInHg.toFixed(2), unit: `inHg · ${report.altimeterHpa!.toFixed(0)} hPa` }
+  : { value: '—', unit: '' };
+
+const headlineStats = [
+  { label: 'Wind', ...windHeadline },
+  { label: 'Visibility', ...visHeadline },
+  { label: 'Ceiling', ...ceilingHeadline },
+  { label: 'Temperature', ...tempHeadline },
+  { label: 'Altimeter', ...pressureHeadline },
+];
+
+const CX = 120;
+const CY = 120;
+const R = 94;
+
+const ticks = Array.from({ length: 36 }, (_, i) => {
+  const deg = i * 10;
+  const major = deg % 30 === 0;
+  const rad = (deg * Math.PI) / 180;
+  const outer = R;
+  const inner = major ? R - 11 : R - 6;
+  return {
+    deg,
+    major,
+    x1: CX + Math.sin(rad) * outer,
+    y1: CY - Math.cos(rad) * outer,
+    x2: CX + Math.sin(rad) * inner,
+    y2: CY - Math.cos(rad) * inner,
+  };
+});
+
+const cardinals = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((deg) => {
+  const rad = (deg * Math.PI) / 180;
+  const r = R - 24;
+  return {
+    deg,
+    label: deg === 0 ? 'N' : deg === 90 ? 'E' : deg === 180 ? 'S' : deg === 270 ? 'W' : pad2(deg / 10),
+    x: CX + Math.sin(rad) * r,
+    y: CY - Math.cos(rad) * r + 4,
+  };
+});
+
+function polar(deg: number, r: number) {
+  const rad = (deg * Math.PI) / 180;
+  return { x: CX + Math.sin(rad) * r, y: CY - Math.cos(rad) * r };
+}
+
+let varyWedge: string | null = null;
+if (report.wind?.varyFrom != null && report.wind.varyTo != null) {
+  const from = report.wind.varyFrom;
+  const to = report.wind.varyTo;
+  const sweep = (((to - from) % 360) + 360) % 360;
+  const a = polar(from, R);
+  const b = polar(to, R);
+  varyWedge = `M ${CX} ${CY} L ${a.x.toFixed(2)} ${a.y.toFixed(2)} A ${R} ${R} 0 ${sweep > 180 ? 1 : 0} 1 ${b.x.toFixed(2)} ${b.y.toFixed(2)} Z`;
+}
+
+const hasWindArrow = !!report.wind && !report.wind.calm && !report.wind.variable && report.wind.directionDeg != null;
+
+const SKY_W = 268;
+const SKY_TOP = 18;
+const SKY_BOTTOM = 268;
+const SKY_LEFT = 46;
+const SKY_RIGHT = 250;
+
+const highestLayer = Math.max(0, ...report.clouds.map((c) => c.baseFt ?? 0));
+const maxAlt = Math.max(12000, Math.ceil((highestLayer + 2500) / 1000) * 1000);
+
+function skyY(alt: number): number {
+  const LOW = 3000;
+  const LOW_SHARE = 0.55;
+  const clamped = Math.max(0, Math.min(alt, maxAlt));
+  const frac =
+    clamped <= LOW ? (clamped / LOW) * LOW_SHARE : LOW_SHARE + ((clamped - LOW) / (maxAlt - LOW)) * (1 - LOW_SHARE);
+  return SKY_BOTTOM - frac * (SKY_BOTTOM - SKY_TOP);
+}
+
+const skyGrid = [500, 1000, 2000, 3000, 5000, 8000, 12000, maxAlt]
+  .filter((alt, idx, arr) => alt <= maxAlt && arr.indexOf(alt) === idx)
+  .map((alt) => ({ alt, y: skyY(alt), emphasis: alt === 3000 }));
+
+const OKTA_SLOTS = 8;
+const oktaWidth = (SKY_RIGHT - SKY_LEFT) / OKTA_SLOTS;
+
+const skyLayers = report.clouds
+  .filter((layer) => layer.baseFt != null || layer.cover === 'VV')
+  .map((layer) => {
+    const base = layer.baseFt ?? 0;
+    return {
+      layer,
+      y: skyY(base),
+      base,
+      oktas: layer.oktas ?? 8,
+      isCeiling: ceiling != null && base === ceiling && (layer.cover === 'BKN' || layer.cover === 'OVC' || layer.cover === 'VV'),
+    };
+  })
+  .sort((a, b) => a.base - b.base);
+
+const clearSky = report.clouds.length === 0 || report.clouds.every((c) => c.oktas === 0);
+const estimatedBaseY = clearSky && estimatedBase != null && estimatedBase <= maxAlt ? skyY(estimatedBase) : null;
+
+const TEMP_MIN = -40;
+const TEMP_MAX = 50;
+function tempPct(value: number): number {
+  return ((Math.max(TEMP_MIN, Math.min(TEMP_MAX, value)) - TEMP_MIN) / (TEMP_MAX - TEMP_MIN)) * 100;
+}
+const tempTicks = [-40, -20, 0, 20, 40];
+
+const VIS_STOPS = [0, 0.25, 0.5, 1, 2, 3, 5, 10];
+const VIS_SEGMENTS = VIS_STOPS.length - 1;
+
+function visPct(miles: number): number {
+  const v = Math.max(0, Math.min(miles, 10));
+  for (let i = 0; i < VIS_SEGMENTS; i++) {
+    if (v <= VIS_STOPS[i + 1]) {
+      const within = (v - VIS_STOPS[i]) / (VIS_STOPS[i + 1] - VIS_STOPS[i]);
+      return ((i + within) / VIS_SEGMENTS) * 100;
+    }
+  }
+  return 100;
+}
+
+const visSegments = VIS_STOPS.slice(0, -1).map((low, i) => {
+  const high = VIS_STOPS[i + 1];
+  const cat: FlightCategory = high <= 1 ? 'LIFR' : high <= 3 ? 'IFR' : high <= 5 ? 'MVFR' : 'VFR';
+  return { low, high, cat };
+});
+
+const visMiles = report.visibility?.statuteMiles ?? null;
+
+const altBars = [
+  { label: 'Field elevation', value: elevationFt, note: 'Surveyed height of the airport reference point.' },
+  { label: 'Pressure altitude', value: pressureAlt, note: 'Field elevation corrected to the standard 29.92 inHg datum.' },
+  { label: 'Density altitude', value: densityAlt, note: 'Pressure altitude corrected for how far the air is from ISA temperature.' },
+].filter((bar) => bar.value != null) as Array<{ label: string; value: number; note: string }>;
+const altBarMax = Math.max(1000, ...altBars.map((bar) => Math.abs(bar.value)));
+
+interface TimelineBlock {
+  period: TafPeriod;
+  leftPct: number;
+  widthPct: number;
+  category: FlightCategory;
+  label: string;
+  summary: string;
+  row: 'prevailing' | 'amendment';
+}
+
+function conditionSummary(period: TafPeriod): string {
+  const parts: string[] = [];
+  if (period.wind) {
+    parts.push(
+      period.wind.calm
+        ? 'calm'
+        : `${period.wind.variable ? 'VRB' : pad2(period.wind.directionDeg ?? 0)}°/${period.wind.speedKt ?? '—'}${period.wind.gustKt ? `G${period.wind.gustKt}` : ''} kt`,
+    );
+  }
+  if (period.visibility) {
+    parts.push(
+      period.visibility.statuteMiles != null && period.visibility.statuteMiles < 10
+        ? `${formatMiles(Math.round(period.visibility.statuteMiles * 100) / 100)} sm`
+        : period.visibility.text,
+    );
+  }
+  for (const wx of period.weather) parts.push(wx.text.toLowerCase());
+  const ceil = ceilingFt(period.clouds);
+  if (ceil != null) parts.push(`ceiling ${fmtInt(ceil)} ft`);
+  else if (period.clouds.length) parts.push(period.clouds.map((c) => `${c.cover}${c.baseFt != null ? fmtInt(c.baseFt) : ''}`).join(' '));
+  else if (period.cavok) parts.push('CAVOK');
+  return parts.join(' · ') || 'No change stated';
+}
+
+let timelineStart: Date | null = null;
+let timelineEnd: Date | null = null;
+let timelineBlocks: TimelineBlock[] = [];
+let timelineHours: Array<{ pct: number; label: string; major: boolean }> = [];
+let nowPct: number | null = null;
+
+if (taf && taf.validFrom && taf.validTo) {
+  timelineStart = resolveTime(taf.validFrom, now);
+  timelineEnd = resolveTime(taf.validTo, now);
+  if (timelineStart && timelineEnd && timelineEnd > timelineStart) {
+    const span = timelineEnd.getTime() - timelineStart.getTime();
+    const pct = (d: Date) => ((d.getTime() - timelineStart!.getTime()) / span) * 100;
+
+    timelineBlocks = taf.periods
+      .map((period) => {
+        const from = period.from ? resolveTime(period.from, timelineStart!) : timelineStart!;
+        const to = period.to ? resolveTime(period.to, timelineStart!) : timelineEnd!;
+        if (!from || !to) return null;
+        const left = Math.max(0, Math.min(100, pct(from)));
+        const right = Math.max(0, Math.min(100, pct(to)));
+        if (right <= left) return null;
+        const isBase = period.kind === 'INITIAL' || period.kind === 'FM' || period.kind === 'BECMG';
+        return {
+          period,
+          leftPct: left,
+          widthPct: right - left,
+          category: flightCategory(period),
+          label:
+            period.kind === 'INITIAL'
+              ? 'Initial'
+              : period.kind === 'FM'
+                ? `FM ${pad2(period.from?.hour ?? 0)}${pad2(period.from?.minute ?? 0)}Z`
+                : period.kindLabel,
+          summary: conditionSummary(period),
+          row: isBase ? ('prevailing' as const) : ('amendment' as const),
+        };
+      })
+      .filter((block): block is TimelineBlock => block !== null);
+
+    const totalHours = span / 3600000;
+    const step = totalHours > 30 ? 6 : 3;
+    for (let h = 0; h <= totalHours; h += step) {
+      const at = new Date(timelineStart.getTime() + h * 3600000);
+      timelineHours.push({
+        pct: (h / totalHours) * 100,
+        label: `${pad2(at.getUTCHours())}Z`,
+        major: at.getUTCHours() === 0,
+      });
+    }
+
+    if (now >= timelineStart && now <= timelineEnd) nowPct = pct(now);
+  }
+}
+
+function tokenStrip(raw: string, tokens: Array<{ start: number; end: number }>) {
+  const out: Array<{ gap: string; index: number }> = [];
+  let cursor = 0;
+  tokens.forEach((token, index) => {
+    out.push({ gap: raw.slice(cursor, token.start), index });
+    cursor = token.end;
+  });
+  return { pieces: out, tail: raw.slice(cursor) };
+}
+
+const metarStrip = tokenStrip(report.raw, report.tokens);
+const tafStrip = taf ? tokenStrip(taf.raw, taf.tokens) : null;
+
+const categoryClass = `cat-${category.toLowerCase()}`;
+---
+
+<article class="wx" data-obs-iso={observedAt ? observedAt.toISOString() : undefined}>
+
+  <section class="wx-headline" aria-labelledby="wx-headline-title">
+    <div class="wx-headline-top">
+      <div class="wx-ident">
+        <h2 class="wx-station num" id="wx-headline-title">{report.station ?? station?.icao ?? 'Report'}</h2>
+        <p class="wx-station-name">
+          {station?.name ?? 'Station name unavailable'}
+          {elevationFt != null && <span class="wx-elev num"> · field elevation {fmtInt(elevationFt)} ft</span>}
+        </p>
+        <p class="wx-obs num">
+          {observedAt ? (
+            <>
+              <span>Observed {pad2(observedAt.getUTCDate())} {observedAt.toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })} {pad2(observedAt.getUTCHours())}:{pad2(observedAt.getUTCMinutes())}Z</span>
+              <span class="wx-age" data-wx-age>· age unavailable</span>
+            </>
+          ) : (
+            <span>Observation time not stated</span>
+          )}
+          {report.auto && <span class="wx-flagchip">AUTO</span>}
+          {report.corrected && <span class="wx-flagchip">CORRECTED</span>}
+          {report.type === 'SPECI' && <span class="wx-flagchip">SPECI</span>}
+        </p>
+      </div>
+
+      <div class={`wx-category ${categoryClass}`}>
+        <span class="wx-category-code">{category}</span>
+        <span class="wx-category-meaning">{CATEGORY_MEANING[category]}</span>
+      </div>
+    </div>
+
+    <div class="wx-stat-band">
+      {headlineStats.map((stat) => (
+        <div class="wx-stat">
+          <div class="col">{stat.label}</div>
+          <div class="wx-stat-value serif num">{stat.value}</div>
+          <div class="wx-stat-unit num">{stat.unit}</div>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  {flags.length > 0 && (
+    <section class="wx-flags" aria-label="Conditions worth noting">
+      {flags.map((flag) => (
+        <div class="wx-flag" data-tone={flag.tone}>
+          <div class="wx-flag-title">{flag.title}</div>
+          <div class="wx-flag-detail">{flag.detail}</div>
+        </div>
+      ))}
+    </section>
+  )}
+
+  <section class="wx-instruments">
+
+    <div class="wx-panel" id="wx-wind-panel"
+      data-wind-dir={report.wind?.directionDeg ?? ''}
+      data-wind-speed={report.wind?.speedKt ?? ''}
+      data-wind-gust={report.wind?.gustKt ?? ''}
+      data-wind-variable={report.wind?.variable ? '1' : '0'}
+      data-runway={defaultRunway}
+    >
+      <header class="wx-panel-head">
+        <span class="col">01 — Wind</span>
+        <span class="wx-panel-note">Directions are true north, as reported</span>
+      </header>
+
+      <svg class="wx-dial" viewBox="0 0 240 240" role="img" aria-label={report.wind ? `Wind ${report.wind.raw}` : 'Wind not reported'}>
+        <circle cx={CX} cy={CY} r={R} class="dial-ring" />
+        <circle cx={CX} cy={CY} r={R - 34} class="dial-ring-inner" />
+
+        {varyWedge && <path d={varyWedge} class="dial-vary" />}
+
+        {ticks.map((tick) => (
+          <line x1={tick.x1} y1={tick.y1} x2={tick.x2} y2={tick.y2} class={tick.major ? 'dial-tick major' : 'dial-tick'} />
+        ))}
+
+        {cardinals.map((point) => (
+          <text x={point.x} y={point.y} class={`dial-label ${point.deg % 90 === 0 ? 'cardinal' : ''}`} text-anchor="middle">{point.label}</text>
+        ))}
+
+        <g id="wx-runway-group" transform={`rotate(${defaultRunway * 10} ${CX} ${CY})`}>
+          <rect x={CX - 9} y={CY - (R - 18)} width="18" height={2 * (R - 18)} rx="1" class="dial-runway" />
+          <line x1={CX} y1={CY - (R - 26)} x2={CX} y2={CY + (R - 26)} class="dial-runway-centerline" />
+          <circle cx={CX} cy={CY + (R - 18)} r="3.2" class="dial-runway-threshold" />
+        </g>
+
+        {hasWindArrow && (
+          <g id="wx-wind-arrow" transform={`rotate(${report.wind!.directionDeg} ${CX} ${CY})`}>
+            <line x1={CX} y1={CY - R + 4} x2={CX} y2={CY - 42} class="dial-wind-shaft" />
+            <path d={`M ${CX} ${CY - 34} l -6.5 -11 l 13 0 Z`} class="dial-wind-head" />
+            <line x1={CX - 8} y1={CY - R + 8} x2={CX + 8} y2={CY - R + 8} class="dial-wind-tail" />
+          </g>
+        )}
+
+        <circle cx={CX} cy={CY} r="30" class="dial-hub" />
+        <text x={CX} y={CY + 2} class="dial-hub-value serif" text-anchor="middle">
+          {report.wind ? (report.wind.calm ? '0' : String(report.wind.speedKt ?? '—')) : '—'}
+        </text>
+        <text x={CX} y={CY + 16} class="dial-hub-unit" text-anchor="middle">
+          {report.wind?.gustKt != null ? `G${report.wind.gustKt} KT` : 'KT'}
+        </text>
+      </svg>
+
+      <div class="wx-runway-picker">
+        <button type="button" class="wx-step" data-runway-step="-1" aria-label="Previous runway heading">−</button>
+        <div class="wx-runway-readout">
+          <span class="col">Runway</span>
+          <span class="wx-runway-id num" data-runway-label>{pad2(defaultRunway)}</span>
+          <span class="wx-runway-hdg num" data-runway-hdg>{pad2(defaultRunway * 10)}°</span>
+        </div>
+        <button type="button" class="wx-step" data-runway-step="1" aria-label="Next runway heading">+</button>
+        <button type="button" class="wx-into-wind" data-runway-best={defaultRunway}>Into wind</button>
+      </div>
+
+      <dl class="wx-components" data-wind-components>
+        <div class="wx-component">
+          <dt class="col">Headwind</dt>
+          <dd>
+            <span class="wx-component-value num" data-headwind-value>
+              {components ? `${Math.abs(components.headwindKt).toFixed(1)} kt` : '—'}
+            </span>
+            <span class="wx-component-note" data-headwind-note>
+              {components ? (components.headwindKt >= 0 ? 'on the nose' : 'tailwind') : 'needs a steady direction'}
+            </span>
+            <span class="wx-meter"><i style={`width:${components ? Math.min(100, (Math.abs(components.headwindKt) / Math.max(1, report.wind?.gustKt ?? report.wind?.speedKt ?? 1)) * 100) : 0}%`} data-headwind-bar></i></span>
+          </dd>
+        </div>
+        <div class="wx-component">
+          <dt class="col">Crosswind</dt>
+          <dd>
+            <span class="wx-component-value num" data-crosswind-value>
+              {components ? `${components.crosswindKt.toFixed(1)} kt` : '—'}
+            </span>
+            <span class="wx-component-note" data-crosswind-note>
+              {components ? (components.from === 'none' ? 'aligned' : `from the ${components.from}`) : 'needs a steady direction'}
+            </span>
+            <span class="wx-meter"><i style={`width:${components ? Math.min(100, (components.crosswindKt / Math.max(1, report.wind?.gustKt ?? report.wind?.speedKt ?? 1)) * 100) : 0}%`} data-crosswind-bar></i></span>
+          </dd>
+        </div>
+        {report.wind?.gustKt != null && (
+          <div class="wx-component wx-component-gust">
+            <dt class="col">In the gust</dt>
+            <dd>
+              <span class="wx-component-value num" data-gust-value>
+                {components?.gustCrosswindKt != null ? `${components.gustCrosswindKt.toFixed(1)} kt crosswind` : '—'}
+              </span>
+              <span class="wx-component-note">peak component at {report.wind.gustKt} kt</span>
+            </dd>
+          </div>
+        )}
+      </dl>
+
+      {report.windShear && <p class="wx-panel-warning">{report.windShear.text}</p>}
+    </div>
+
+    <div class="wx-panel">
+      <header class="wx-panel-head">
+        <span class="col">02 — Sky</span>
+        <span class="wx-panel-note">Coverage shown in eighths, as reported</span>
+      </header>
+
+      <svg class="wx-sky" viewBox={`0 0 ${SKY_W} 300`} role="img" aria-label="Cloud layers by height">
+        <defs>
+          <pattern id="wx-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="6" class="sky-hatch-line" />
+          </pattern>
+        </defs>
+
+        {skyGrid.map((line) => (
+          <g>
+            <line x1={SKY_LEFT} y1={line.y} x2={SKY_RIGHT} y2={line.y} class={line.emphasis ? 'sky-grid emphasis' : 'sky-grid'} />
+            <text x={SKY_LEFT - 8} y={line.y + 3.5} class="sky-axis num" text-anchor="end">{line.alt >= 1000 ? `${line.alt / 1000}k` : line.alt}</text>
+          </g>
+        ))}
+
+        {estimatedBaseY != null && (
+          <g>
+            <line x1={SKY_LEFT} y1={estimatedBaseY} x2={SKY_RIGHT} y2={estimatedBaseY} class="sky-estimate" />
+            <text x={SKY_RIGHT} y={estimatedBaseY - 6} class="sky-estimate-label" text-anchor="end">Estimated convective base {fmtInt(estimatedBase)} ft</text>
+          </g>
+        )}
+
+        {skyLayers.map((entry) => (
+          <g class={entry.isCeiling ? 'sky-layer is-ceiling' : 'sky-layer'}>
+            {entry.layer.cover === 'VV' ? (
+              <rect x={SKY_LEFT} y={entry.y} width={SKY_RIGHT - SKY_LEFT} height={SKY_BOTTOM - entry.y} fill="url(#wx-hatch)" class="sky-vv" />
+            ) : (
+              Array.from({ length: OKTA_SLOTS }, (_, slot) => (
+                <rect
+                  x={SKY_LEFT + slot * oktaWidth + 1}
+                  y={entry.y - 5}
+                  width={oktaWidth - 2}
+                  height="10"
+                  class={slot < entry.oktas ? 'sky-okta filled' : 'sky-okta'}
+                />
+              ))
+            )}
+            {entry.isCeiling && <line x1={SKY_LEFT} y1={entry.y - 8} x2={SKY_RIGHT} y2={entry.y - 8} class="sky-ceiling-rule" />}
+            <text x={SKY_RIGHT} y={entry.y - 11} class="sky-layer-label num" text-anchor="end">
+              {entry.layer.cover}{entry.layer.baseFt != null ? ` ${fmtInt(entry.layer.baseFt)} ft` : ''}{entry.layer.type ? ` ${entry.layer.type}` : ''}{entry.isCeiling ? ' · ceiling' : ''}
+            </text>
+          </g>
+        ))}
+
+        {clearSky && (
+          <text x={(SKY_LEFT + SKY_RIGHT) / 2} y={skyY(maxAlt / 2)} class="sky-empty" text-anchor="middle">
+            {report.cavok ? 'CAVOK — no cloud below 5,000 ft' : 'No cloud layers reported'}
+          </text>
+        )}
+
+        <line x1={SKY_LEFT} y1={SKY_BOTTOM} x2={SKY_RIGHT} y2={SKY_BOTTOM} class="sky-ground-line" />
+        <rect x={SKY_LEFT} y={SKY_BOTTOM} width={SKY_RIGHT - SKY_LEFT} height="12" fill="url(#wx-hatch)" class="sky-ground" />
+        <rect x={SKY_LEFT + 58} y={SKY_BOTTOM - 3} width="88" height="4" class="sky-strip" />
+        <text x={SKY_LEFT - 8} y={SKY_BOTTOM + 3.5} class="sky-axis num" text-anchor="end">0</text>
+        <text x={SKY_RIGHT} y={SKY_BOTTOM + 22} class="sky-foot" text-anchor="end">Feet above ground · scale expanded below 3,000</text>
+      </svg>
+    </div>
+
+    <div class="wx-panel">
+      <header class="wx-panel-head">
+        <span class="col">03 — Air</span>
+        <span class="wx-panel-note">Performance figures are standard approximations</span>
+      </header>
+
+      {report.temperatureC != null ? (
+        <div class="wx-thermo">
+          <div class="wx-thermo-track">
+            {report.dewpointC != null && (
+              <span
+                class="wx-thermo-span"
+                style={`left:${Math.min(tempPct(report.dewpointC), tempPct(report.temperatureC))}%;width:${Math.abs(tempPct(report.temperatureC) - tempPct(report.dewpointC))}%`}
+              ></span>
+            )}
+            <span class="wx-thermo-freeze" style={`left:${tempPct(0)}%`}></span>
+            <span class="wx-thermo-mark temp" style={`left:${tempPct(report.temperatureC)}%`} title="Temperature"></span>
+            {report.dewpointC != null && (
+              <span class="wx-thermo-mark dew" style={`left:${tempPct(report.dewpointC)}%`} title="Dew point"></span>
+            )}
+          </div>
+          <div class="wx-thermo-axis num">
+            {tempTicks.map((tick) => (
+              <span style={`left:${tempPct(tick)}%`}>{tick}</span>
+            ))}
+          </div>
+          <div class="wx-thermo-legend">
+            <span><i class="key temp"></i>Temperature {Math.round(report.temperatureC * 10) / 10}°C</span>
+            {report.dewpointC != null && <span><i class="key dew"></i>Dew point {Math.round(report.dewpointC * 10) / 10}°C</span>}
+            <span class="wx-thermo-freeze-key">0°C</span>
+          </div>
+        </div>
+      ) : (
+        <p class="wx-empty">Temperature was not reported in this observation.</p>
+      )}
+
+      {altBars.length > 0 && (
+        <div class="wx-altbars">
+          {altBars.map((bar) => (
+            <div class="wx-altbar">
+              <div class="wx-altbar-head">
+                <span class="col">{bar.label}</span>
+                <span class="wx-altbar-value num">{fmtInt(bar.value)} ft</span>
+              </div>
+              <span class="wx-meter"><i style={`width:${Math.max(2, (Math.abs(bar.value) / altBarMax) * 100)}%`}></i></span>
+              <p class="wx-altbar-note">{bar.note}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <dl class="wx-facts">
+        <div><dt>Relative humidity</dt><dd class="num">{humidity != null ? `${Math.round(humidity)}%` : '—'}</dd></div>
+        <div><dt>Temperature / dew point spread</dt><dd class="num">{spread != null ? `${(Math.round(spread * 10) / 10).toFixed(1)} °C` : '—'}</dd></div>
+        <div><dt>Estimated cloud base</dt><dd class="num">{estimatedBase != null ? `${fmtInt(estimatedBase)} ft AGL` : '—'}</dd></div>
+        <div><dt>Altimeter</dt><dd class="num">{report.altimeterInHg != null ? `${report.altimeterInHg.toFixed(2)} inHg · ${report.altimeterHpa!.toFixed(0)} hPa` : '—'}</dd></div>
+        {report.seaLevelPressureHpa != null && (
+          <div><dt>Sea-level pressure</dt><dd class="num">{report.seaLevelPressureHpa.toFixed(1)} hPa</dd></div>
+        )}
+        {chill != null && <div><dt>Wind chill</dt><dd class="num">{chill.toFixed(1)} °C</dd></div>}
+      </dl>
+    </div>
+  </section>
+
+  <section class="wx-visibility">
+    <header class="wx-panel-head">
+      <span class="col">04 — Visibility and present weather</span>
+      <span class="wx-panel-note">Bands show the category prevailing visibility alone would give</span>
+    </header>
+
+    <div class="wx-vis-scale">
+      <div class="wx-vis-track">
+        {visSegments.map((segment) => (
+          <span class={`wx-vis-seg cat-${segment.cat.toLowerCase()}`} style={`width:${100 / VIS_SEGMENTS}%`}></span>
+        ))}
+        {visMiles != null && (
+          <span class="wx-vis-marker" style={`left:${visPct(visMiles)}%`}>
+            <span class="wx-vis-marker-label num">
+              {report.visibility?.greaterThan ? '10+' : formatMiles(Math.round(visMiles * 100) / 100)} sm
+            </span>
+          </span>
+        )}
+      </div>
+      <div class="wx-vis-ticks num">
+        {VIS_STOPS.map((stop, i) => (
+          <span style={`left:${(i / VIS_SEGMENTS) * 100}%`}>{stop === 0 ? '0' : formatMiles(stop)}</span>
+        ))}
+      </div>
+    </div>
+
+    <div class="wx-vis-detail">
+      <div class="wx-wx-list">
+        <div class="col">Present weather</div>
+        {report.weather.length ? (
+          <ul>
+            {report.weather.map((wx) => (
+              <li><code class="num">{wx.raw}</code><span>{wx.text}</span></li>
+            ))}
+          </ul>
+        ) : (
+          <p class="wx-empty">No present-weather group in this report.</p>
+        )}
+      </div>
+
+      <div class="wx-wx-list">
+        <div class="col">Runway visual range</div>
+        {report.rvr.length ? (
+          <ul>
+            {report.rvr.map((item) => (
+              <li><code class="num">{item.raw}</code><span>{item.text}</span></li>
+            ))}
+          </ul>
+        ) : (
+          <p class="wx-empty">No RVR reported. Stations transmit it only when visibility or RVR falls below about 1 sm.</p>
+        )}
+      </div>
+    </div>
+  </section>
+
+  <section class="wx-raw" id="wx-raw">
+    <header class="wx-panel-head">
+      <span class="col">05 — Group by group</span>
+      <span class="wx-panel-note">Hover or focus any group to tie it to its meaning</span>
+    </header>
+
+    <p class="wx-strip" data-strip="metar">
+      {metarStrip.pieces.map((piece) => (
+        <>
+          {piece.gap && <span class="wx-gap">{piece.gap}</span>}
+          <button
+            type="button"
+            class="wx-tok"
+            data-kind={report.tokens[piece.index].kind}
+            data-tok={piece.index}
+            aria-describedby={`wx-dec-${piece.index}`}
+          >{report.tokens[piece.index].raw}</button>
+        </>
+      ))}
+      {metarStrip.tail && <span class="wx-gap">{metarStrip.tail}</span>}
+    </p>
+
+    <ol class="wx-decode" data-decode="metar">
+      {report.tokens.map((token, index) => (
+        <li id={`wx-dec-${index}`} data-dec={index} data-kind={token.kind}>
+          <code class="wx-dec-code num">{token.raw}</code>
+          <span class="wx-dec-label col">{token.label}</span>
+          <span class="wx-dec-plain">{token.plain}</span>
+        </li>
+      ))}
+    </ol>
+
+    {report.warnings.length > 0 && (
+      <p class="wx-panel-warning">
+        {report.warnings.length} group{report.warnings.length === 1 ? '' : 's'} in this report
+        ({report.warnings.join(', ')}) fall outside what this decoder recognises. They are shown
+        unchanged rather than guessed at.
+      </p>
+    )}
+  </section>
+
+  {taf ? (
+    <section class="wx-taf">
+      <header class="wx-panel-head">
+        <span class="col">06 — Terminal aerodrome forecast</span>
+        <span class="wx-panel-note">
+          {taf.issued ? `Issued ${pad2(taf.issued.day)} at ${pad2(taf.issued.hour)}:${pad2(taf.issued.minute)}Z` : 'Issue time not stated'}
+          {taf.amended ? ' · amended' : ''}
+        </span>
+      </header>
+
+      {timelineBlocks.length > 0 && timelineStart && timelineEnd ? (
+        <div class="wx-timeline">
+          <div class="wx-timeline-ruler num">
+            {timelineHours.map((tick) => (
+              <span class={tick.major ? 'major' : ''} style={`left:${tick.pct}%`}>{tick.label}</span>
+            ))}
+          </div>
+
+          <div class="wx-timeline-rows">
+            <div class="wx-timeline-row">
+              <span class="wx-timeline-rowlabel col">Prevailing</span>
+              <div class="wx-timeline-track">
+                {timelineBlocks.filter((b) => b.row === 'prevailing').map((block) => (
+                  <span
+                    class={`wx-block cat-${block.category.toLowerCase()}`}
+                    style={`left:${block.leftPct}%;width:${block.widthPct}%`}
+                    title={`${block.label} — ${block.summary}`}
+                  >
+                    <span class="wx-block-label num">{block.label}</span>
+                  </span>
+                ))}
+                {nowPct != null && <span class="wx-now" style={`left:${nowPct}%`}><span class="wx-now-label col">Now</span></span>}
+              </div>
+            </div>
+
+            <div class="wx-timeline-row">
+              <span class="wx-timeline-rowlabel col">Temporary</span>
+              <div class="wx-timeline-track">
+                {timelineBlocks.filter((b) => b.row === 'amendment').length ? (
+                  timelineBlocks.filter((b) => b.row === 'amendment').map((block) => (
+                    <span
+                      class={`wx-block wx-block-temp cat-${block.category.toLowerCase()}`}
+                      style={`left:${block.leftPct}%;width:${block.widthPct}%`}
+                      title={`${block.label} — ${block.summary}`}
+                    >
+                      <span class="wx-block-label num">{block.label}</span>
+                    </span>
+                  ))
+                ) : (
+                  <span class="wx-timeline-empty">No temporary or probability groups</span>
+                )}
+                {nowPct != null && <span class="wx-now" style={`left:${nowPct}%`}></span>}
+              </div>
+            </div>
+          </div>
+
+          <p class="wx-timeline-foot num">
+            Valid {pad2(timelineStart.getUTCDate())} {pad2(timelineStart.getUTCHours())}:00Z
+            to {pad2(timelineEnd.getUTCDate())} {pad2(timelineEnd.getUTCHours())}:00Z
+            · block colour is the flight category each period would produce
+          </p>
+        </div>
+      ) : (
+        <p class="wx-empty">This forecast has no usable validity period, so it cannot be laid on a timeline.</p>
+      )}
+
+      <div class="wx-periods">
+        {taf.periods.map((period) => {
+          const cat = flightCategory(period);
+          return (
+            <article class="wx-period">
+              <header class="wx-period-head">
+                <span class={`wx-period-cat cat-${cat.toLowerCase()}`}>{cat}</span>
+                <span class="wx-period-kind">{period.kind === 'INITIAL' ? 'Initial conditions' : period.kindLabel}</span>
+                <span class="wx-period-time num">
+                  {period.from ? `${pad2(period.from.day)} ${pad2(period.from.hour)}:${pad2(period.from.minute)}Z` : '—'}
+                  {period.to ? ` → ${pad2(period.to.day)} ${pad2(period.to.hour)}:${pad2(period.to.minute)}Z` : ''}
+                </span>
+              </header>
+              <dl class="wx-period-body">
+                {period.wind && <div><dt>Wind</dt><dd>{period.wind.calm ? 'Calm' : `${period.wind.variable ? 'Variable' : `${pad2(period.wind.directionDeg ?? 0)}° (${compassPoint(period.wind.directionDeg ?? 0)})`} at ${period.wind.speedKt} kt${period.wind.gustKt ? `, gusting ${period.wind.gustKt}` : ''}`}</dd></div>}
+                {period.visibility && <div><dt>Visibility</dt><dd>{period.visibility.text}</dd></div>}
+                {period.weather.length > 0 && <div><dt>Weather</dt><dd>{period.weather.map((w) => w.text).join('; ')}</dd></div>}
+                {period.clouds.length > 0 && <div><dt>Cloud</dt><dd>{period.clouds.map((c: CloudLayer) => cloudText(c)).join('; ')}</dd></div>}
+                {period.windShear && <div><dt>Wind shear</dt><dd>{period.windShear.text}</dd></div>}
+                {period.probability != null && <div><dt>Probability</dt><dd>{period.probability}% chance of these conditions</dd></div>}
+              </dl>
+            </article>
+          );
+        })}
+      </div>
+
+      <details class="wx-taf-raw">
+        <summary>Forecast, group by group</summary>
+        <p class="wx-strip" data-strip="taf">
+          {tafStrip && tafStrip.pieces.map((piece) => (
+            <>
+              {piece.gap && <span class="wx-gap">{piece.gap}</span>}
+              <button
+                type="button"
+                class="wx-tok"
+                data-kind={taf.tokens[piece.index].kind}
+                data-tok={`t${piece.index}`}
+                aria-describedby={`wx-tdec-${piece.index}`}
+              >{taf.tokens[piece.index].raw}</button>
+            </>
+          ))}
+          {tafStrip?.tail && <span class="wx-gap">{tafStrip.tail}</span>}
+        </p>
+        <ol class="wx-decode" data-decode="taf">
+          {taf.tokens.map((token, index) => (
+            <li id={`wx-tdec-${index}`} data-dec={`t${index}`} data-kind={token.kind}>
+              <code class="wx-dec-code num">{token.raw}</code>
+              <span class="wx-dec-label col">{token.label}</span>
+              <span class="wx-dec-plain">{token.plain}</span>
+            </li>
+          ))}
+        </ol>
+      </details>
+    </section>
+  ) : (
+    <section class="wx-taf">
+      <header class="wx-panel-head">
+        <span class="col">06 — Terminal aerodrome forecast</span>
+      </header>
+      <p class="wx-empty">
+        No TAF is available for this station. Forecasts are issued only for aerodromes with a
+        forecast responsibility — most smaller fields report a METAR but never a TAF.
+      </p>
+    </section>
+  )}
+
+  <section class="wx-notes">
+    <header class="wx-panel-head">
+      <span class="col">07 — How to read this</span>
+    </header>
+    <div class="wx-notes-grid">
+      <div>
+        <h3>Flight categories</h3>
+        <p>
+          Categories come from the worse of ceiling and prevailing visibility, using the FAA
+          thresholds: LIFR below 500 ft or 1 sm, IFR below 1,000 ft or 3 sm, MVFR at or below
+          3,000 ft or 5 sm, VFR above both. A ceiling is the lowest broken, overcast or obscured
+          layer — few and scattered layers never make a ceiling.
+        </p>
+      </div>
+      <div>
+        <h3>What is measured and what is derived</h3>
+        <p>
+          Everything in the raw report is measured or observed at the field. Pressure altitude,
+          density altitude, relative humidity, estimated cloud base and the runway wind
+          components are computed here from those numbers using standard approximations. They
+          are planning aids, not performance data for a specific aircraft.
+        </p>
+      </div>
+      <div>
+        <h3>True versus magnetic</h3>
+        <p>
+          Wind direction in a METAR is referenced to true north. Runway numbers are magnetic. The
+          crosswind figure ignores magnetic variation, so at fields with large variation treat it
+          as close rather than exact — the tower's spoken wind is already magnetic and will differ.
+        </p>
+      </div>
+      <div>
+        <h3>Source and freshness</h3>
+        <p>
+          Observations and forecasts come from the NOAA Aviation Weather Center feed, cached for
+          a few minutes. This is a decoding tool for study and planning. It is not a weather
+          briefing, and nothing here substitutes for an official source before a flight.
+          {fetchedAt && <span class="num"> Retrieved {new Date(fetchedAt).toISOString().replace('T', ' ').slice(0, 16)}Z.</span>}
+        </p>
+      </div>
+    </div>
+  </section>
+</article>
+
+<style>
+  .wx {
+    --cat-vfr: #17663B;
+    --cat-mvfr: #00396E;
+    --cat-ifr: #B42318;
+    --cat-lifr: #7B2D8E;
+    --cat-unknown: var(--text-muted);
+    display: block;
+    margin-top: 40px;
+  }
+
+  :global([data-theme='dark']) .wx {
+    --cat-vfr: #6FCF97;
+    --cat-mvfr: #6B96C3;
+    --cat-ifr: #F27A70;
+    --cat-lifr: #C98BD6;
+  }
+
+  .cat-vfr { --cat: var(--cat-vfr); }
+  .cat-mvfr { --cat: var(--cat-mvfr); }
+  .cat-ifr { --cat: var(--cat-ifr); }
+  .cat-lifr { --cat: var(--cat-lifr); }
+  .cat-unknown { --cat: var(--cat-unknown); }
+
+  .wx-headline {
+    border-top: 1px solid var(--border-strong);
+    padding-top: 22px;
+  }
+
+  .wx-headline-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 32px;
+    flex-wrap: wrap;
+  }
+
+  .wx-station {
+    font-family: var(--font-archivo);
+    font-size: clamp(38px, 6vw, 58px);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    margin: 0;
+  }
+
+  .wx-station-name {
+    margin: 8px 0 0;
+    font-size: 15px;
+    color: var(--text-muted);
+    max-width: 46ch;
+  }
+
+  .wx-elev { color: var(--text-subtle); }
+
+  .wx-obs {
+    margin: 10px 0 0;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .wx-age { color: var(--fg); }
+
+  .wx-flagchip {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+
+  .wx-category {
+    border: 1px solid var(--cat);
+    border-left-width: 4px;
+    padding: 14px 18px;
+    max-width: 340px;
+    min-width: 240px;
+  }
+
+  .wx-category-code {
+    display: block;
+    font-family: var(--font-archivo);
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--cat);
+    line-height: 1;
+  }
+
+  .wx-category-meaning {
+    display: block;
+    margin-top: 6px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    line-height: 1.45;
+  }
+
+  .wx-stat-band {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    border-top: 1px solid var(--border);
+    margin-top: 26px;
+  }
+
+  .wx-stat {
+    padding: 18px 20px 20px 0;
+    border-right: 1px solid var(--border);
+  }
+
+  .wx-stat:last-child { border-right: none; }
+
+  .wx-stat-value {
+    font-size: clamp(24px, 3.2vw, 34px);
+    line-height: 1.1;
+    margin-top: 10px;
+    word-break: break-word;
+  }
+
+  .wx-stat-unit {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .wx-flags {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    margin-top: 28px;
+  }
+
+  .wx-flag {
+    background: var(--surface-card);
+    padding: 14px 16px;
+    border-left: 3px solid var(--tone-color, var(--border));
+  }
+
+  .wx-flag[data-tone='danger'] { --tone-color: var(--danger); }
+  .wx-flag[data-tone='warning'] { --tone-color: var(--warning); }
+  .wx-flag[data-tone='info'] { --tone-color: var(--accent-blue); }
+
+  .wx-flag-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--tone-color, var(--fg));
+  }
+
+  .wx-flag-detail {
+    margin-top: 4px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text-muted);
+  }
+
+  .wx-panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 18px;
+  }
+
+  .wx-panel-note {
+    font-size: 11.5px;
+    color: var(--text-subtle);
+  }
+
+  .wx-panel-warning {
+    margin: 14px 0 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--warning);
+    border-left: 2px solid var(--warning);
+    padding-left: 10px;
+  }
+
+  .wx-instruments {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    margin-top: 40px;
+  }
+
+  .wx-panel {
+    background: var(--surface-card);
+    padding: 20px 22px 24px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .wx-empty {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    line-height: 1.55;
+    margin: 0;
+  }
+
+  .wx-dial {
+    width: 100%;
+    max-width: 300px;
+    margin: 4px auto 8px;
+    display: block;
+    overflow: visible;
+  }
+
+  .dial-ring { fill: none; stroke: var(--border); stroke-width: 1; }
+  .dial-ring-inner { fill: none; stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 4; opacity: 0.7; }
+  .dial-tick { stroke: var(--border); stroke-width: 1; }
+  .dial-tick.major { stroke: var(--text-muted); stroke-width: 1.4; }
+  .dial-label { font-size: 9.5px; font-weight: 600; fill: var(--text-muted); letter-spacing: 0.06em; }
+  .dial-label.cardinal { fill: var(--fg); font-size: 11px; }
+  .dial-vary { fill: var(--accent-sky); opacity: 0.14; }
+  .dial-runway { fill: var(--fg); opacity: 0.13; }
+  .dial-runway-centerline { stroke: var(--fg); stroke-width: 1; stroke-dasharray: 5 6; opacity: 0.5; }
+  .dial-runway-threshold { fill: var(--fg); opacity: 0.55; }
+  .dial-wind-shaft { stroke: var(--accent-blue); stroke-width: 2.4; }
+  .dial-wind-head { fill: var(--accent-blue); }
+  .dial-wind-tail { stroke: var(--accent-blue); stroke-width: 2.4; }
+  .dial-hub { fill: var(--surface-card); stroke: var(--border); stroke-width: 1; }
+  .dial-hub-value { font-size: 24px; fill: var(--fg); font-family: var(--font-serif); }
+  .dial-hub-unit { font-size: 8.5px; fill: var(--text-muted); letter-spacing: 0.12em; font-weight: 600; }
+
+  .wx-runway-picker {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .wx-step {
+    width: 34px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--fg);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    transition: border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+  }
+
+  .wx-step:hover { border-color: var(--border-strong); background: var(--surface-subtle); }
+
+  .wx-runway-readout {
+    flex: 1;
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  .wx-runway-id {
+    font-family: var(--font-archivo);
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .wx-runway-hdg { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+
+  .wx-into-wind {
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--fg);
+    font-size: 11.5px;
+    padding: 0 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+  }
+
+  .wx-into-wind:hover { border-color: var(--border-strong); background: var(--surface-subtle); }
+
+  .wx-components { margin: 18px 0 0; }
+
+  .wx-component { padding: 10px 0; border-top: 1px solid var(--border); }
+  .wx-component dd { margin: 6px 0 0; }
+
+  .wx-component-value {
+    font-family: var(--font-serif);
+    font-size: 20px;
+  }
+
+  .wx-component-note {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-left: 8px;
+  }
+
+  .wx-component-gust .wx-component-value { font-size: 15px; }
+
+  .wx-meter {
+    display: block;
+    height: 3px;
+    background: var(--surface-subtle);
+    margin-top: 8px;
+    border: 1px solid var(--border);
+  }
+
+  .wx-meter i {
+    display: block;
+    height: 100%;
+    background: var(--accent-blue);
+    transition: width var(--dur-base) var(--ease-out);
+  }
+
+  .wx-sky { width: 100%; display: block; }
+  .sky-grid { stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 5; }
+  .sky-grid.emphasis { stroke-dasharray: none; opacity: 0.85; }
+  .sky-axis { font-size: 9px; fill: var(--text-muted); }
+  .sky-hatch-line { stroke: var(--border); stroke-width: 1.4; }
+  .sky-okta { fill: var(--fg); opacity: 0.07; }
+  .sky-okta.filled { fill: var(--fg); opacity: 0.62; }
+  .sky-layer.is-ceiling .sky-okta.filled { fill: var(--accent-blue); opacity: 0.85; }
+  .sky-ceiling-rule { stroke: var(--accent-blue); stroke-width: 1; stroke-dasharray: 4 3; }
+  .sky-layer-label { font-size: 9px; fill: var(--text-muted); letter-spacing: 0.04em; }
+  .sky-layer.is-ceiling .sky-layer-label { fill: var(--accent-blue); }
+  .sky-vv { opacity: 0.5; }
+  .sky-estimate { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 1 4; }
+  .sky-estimate-label { font-size: 8.5px; fill: var(--text-subtle); }
+  .sky-ground-line { stroke: var(--border-strong); stroke-width: 1.2; }
+  .sky-ground { opacity: 0.55; }
+  .sky-strip { fill: var(--fg); opacity: 0.35; }
+  .sky-foot { font-size: 8.5px; fill: var(--text-subtle); }
+  .sky-empty { font-size: 11px; fill: var(--text-muted); }
+
+  .wx-thermo { margin-bottom: 22px; }
+
+  .wx-thermo-track {
+    position: relative;
+    height: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface-subtle);
+  }
+
+  .wx-thermo-span {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: var(--accent-sky);
+    opacity: 0.28;
+  }
+
+  .wx-thermo-freeze {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 1px;
+    background: var(--fg);
+    opacity: 0.45;
+  }
+
+  .wx-thermo-mark {
+    position: absolute;
+    top: 50%;
+    width: 11px;
+    height: 11px;
+    margin: -5.5px 0 0 -5.5px;
+    border-radius: 50%;
+  }
+
+  .wx-thermo-mark.temp { background: var(--fg); }
+  .wx-thermo-mark.dew { background: var(--surface-card); border: 2px solid var(--accent-blue); }
+
+  .wx-thermo-axis {
+    position: relative;
+    height: 16px;
+    margin-top: 4px;
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .wx-thermo-axis span { position: absolute; transform: translateX(-50%); }
+
+  .wx-thermo-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    margin-top: 6px;
+  }
+
+  .wx-thermo-legend .key {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: -1px;
+  }
+
+  .wx-thermo-legend .key.temp { background: var(--fg); }
+  .wx-thermo-legend .key.dew { border: 2px solid var(--accent-blue); }
+  .wx-thermo-freeze-key { border-left: 1px solid var(--fg); padding-left: 6px; }
+
+  .wx-altbars { display: grid; gap: 14px; }
+
+  .wx-altbar-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .wx-altbar-value { font-family: var(--font-serif); font-size: 17px; }
+  .wx-altbar-note { margin: 6px 0 0; font-size: 11px; color: var(--text-subtle); line-height: 1.45; }
+
+  .wx-facts { margin: 20px 0 0; border-top: 1px solid var(--border); }
+  .wx-facts > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12.5px;
+  }
+  .wx-facts dt { color: var(--text-muted); }
+  .wx-facts dd { margin: 0; text-align: right; }
+
+  .wx-visibility { margin-top: 48px; }
+
+  .wx-vis-scale { margin-bottom: 26px; }
+
+  .wx-vis-track {
+    position: relative;
+    display: flex;
+    height: 14px;
+    border: 1px solid var(--border);
+  }
+
+  .wx-vis-seg { display: block; background: var(--cat); opacity: 0.28; border-right: 1px solid var(--bg); }
+  .wx-vis-seg:last-child { border-right: none; }
+
+  .wx-vis-marker {
+    position: absolute;
+    top: -7px;
+    bottom: -7px;
+    width: 2px;
+    background: var(--fg);
+    transform: translateX(-1px);
+  }
+
+  .wx-vis-marker-label {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 4px);
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--bg);
+    padding: 0 4px;
+  }
+
+  .wx-vis-ticks {
+    position: relative;
+    height: 16px;
+    margin-top: 6px;
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .wx-vis-ticks span { position: absolute; transform: translateX(-50%); }
+
+  .wx-vis-detail {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 28px;
+  }
+
+  .wx-wx-list ul { list-style: none; margin: 10px 0 0; padding: 0; }
+  .wx-wx-list li {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .wx-wx-list code {
+    font-size: 12px;
+    background: var(--surface-subtle);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    flex: none;
+  }
+  .wx-wx-list p { margin-top: 10px; }
+
+  .wx-raw { margin-top: 48px; }
+
+  .wx-strip {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 14px;
+    line-height: 2.4;
+    background: var(--surface-subtle);
+    border: 1px solid var(--border);
+    padding: 16px 18px;
+    margin: 0 0 22px;
+    word-break: break-word;
+  }
+
+  .wx-gap { white-space: pre; }
+
+  .wx-tok {
+    font: inherit;
+    background: var(--surface-card);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-bottom-color: var(--tok-color, var(--border));
+    padding: 2px 5px;
+    cursor: pointer;
+    transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+  }
+
+  .wx-tok:hover,
+  .wx-tok:focus-visible,
+  .wx-tok.is-active {
+    background: var(--tok-color, var(--accent-blue));
+    border-color: var(--tok-color, var(--accent-blue));
+    color: var(--bg);
+    outline: none;
+  }
+
+  .wx-tok[data-kind='station'], .wx-decode li[data-kind='station'] { --tok-color: var(--accent-blue); }
+  .wx-tok[data-kind='time'], .wx-decode li[data-kind='time'] { --tok-color: var(--text-muted); }
+  .wx-tok[data-kind='wind'], .wx-tok[data-kind='wind-var'], .wx-tok[data-kind='wind-shear'],
+  .wx-decode li[data-kind='wind'], .wx-decode li[data-kind='wind-var'], .wx-decode li[data-kind='wind-shear'] { --tok-color: #4E7098; }
+  .wx-tok[data-kind='visibility'], .wx-decode li[data-kind='visibility'] { --tok-color: #7A6A3A; }
+  .wx-tok[data-kind='weather'], .wx-decode li[data-kind='weather'] { --tok-color: var(--danger); }
+  .wx-tok[data-kind='sky'], .wx-decode li[data-kind='sky'] { --tok-color: #5F7D8C; }
+  .wx-tok[data-kind='temp'], .wx-decode li[data-kind='temp'] { --tok-color: #8A5A00; }
+  .wx-tok[data-kind='pressure'], .wx-decode li[data-kind='pressure'] { --tok-color: #4A6B4F; }
+  .wx-tok[data-kind='rvr'], .wx-decode li[data-kind='rvr'] { --tok-color: #7A4A6B; }
+  .wx-tok[data-kind='period'], .wx-tok[data-kind='valid'],
+  .wx-decode li[data-kind='period'], .wx-decode li[data-kind='valid'] { --tok-color: var(--accent-sky); }
+  .wx-tok[data-kind='unknown'], .wx-decode li[data-kind='unknown'] { --tok-color: var(--warning); }
+
+  .wx-decode { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
+
+  .wx-decode li {
+    display: grid;
+    grid-template-columns: 132px 150px 1fr;
+    gap: 16px;
+    align-items: baseline;
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    scroll-margin-top: 90px;
+    transition: background-color var(--dur-fast) var(--ease-out);
+  }
+
+  .wx-decode li.is-active { background: var(--surface-subtle); }
+  .wx-decode li.is-active .wx-dec-code { border-color: var(--tok-color, var(--border-strong)); }
+
+  .wx-dec-code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--tok-color, var(--border));
+    padding: 2px 7px;
+    background: var(--surface-subtle);
+    word-break: break-all;
+  }
+
+  .wx-dec-label { color: var(--text-muted); }
+  .wx-dec-plain { color: var(--fg); line-height: 1.5; }
+
+  .wx-taf { margin-top: 48px; }
+
+  .wx-timeline { margin-bottom: 30px; }
+
+  .wx-timeline-ruler {
+    position: relative;
+    height: 16px;
+    margin-left: 96px;
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .wx-timeline-ruler span { position: absolute; transform: translateX(-50%); }
+  .wx-timeline-ruler span.major { color: var(--fg); font-weight: 600; }
+
+  .wx-timeline-rows { border: 1px solid var(--border); }
+
+  .wx-timeline-row {
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .wx-timeline-row:last-child { border-bottom: none; }
+
+  .wx-timeline-rowlabel {
+    width: 96px;
+    flex: none;
+    padding: 14px 12px;
+    border-right: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+  }
+
+  .wx-timeline-track {
+    position: relative;
+    flex: 1;
+    min-height: 46px;
+    background: repeating-linear-gradient(
+      to right,
+      transparent,
+      transparent calc(12.5% - 1px),
+      var(--border) calc(12.5% - 1px),
+      var(--border) 12.5%
+    );
+  }
+
+  .wx-block {
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    background: var(--cat);
+    opacity: 0.82;
+    border-left: 1px solid var(--bg);
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  .wx-block-temp {
+    top: 12px;
+    bottom: 12px;
+    opacity: 0.55;
+    background: repeating-linear-gradient(45deg, var(--cat), var(--cat) 4px, transparent 4px, transparent 8px);
+    border: 1px solid var(--cat);
+  }
+
+  .wx-block-label {
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--bg);
+    padding: 0 6px;
+    white-space: nowrap;
+  }
+
+  .wx-block-temp .wx-block-label { color: var(--fg); }
+
+  .wx-now {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--fg);
+    z-index: 2;
+  }
+
+  .wx-now-label {
+    position: absolute;
+    top: 2px;
+    left: 4px;
+    background: var(--bg);
+    padding: 1px 4px;
+    border: 1px solid var(--border-strong);
+    white-space: nowrap;
+  }
+
+  .wx-timeline-empty {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 11.5px;
+    color: var(--text-subtle);
+  }
+
+  .wx-timeline-foot { margin: 10px 0 0; font-size: 11px; color: var(--text-subtle); }
+
+  .wx-periods {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+  }
+
+  .wx-period { background: var(--surface-card); padding: 16px 18px; }
+
+  .wx-period-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .wx-period-cat {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--bg);
+    background: var(--cat);
+    padding: 3px 7px;
+  }
+
+  .wx-period-kind { font-size: 13px; font-weight: 600; }
+  .wx-period-time { font-size: 11.5px; color: var(--text-muted); margin-left: auto; }
+
+  .wx-period-body { margin: 0; }
+  .wx-period-body > div {
+    display: grid;
+    grid-template-columns: 92px 1fr;
+    gap: 12px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12.5px;
+  }
+  .wx-period-body > div:last-child { border-bottom: none; }
+  .wx-period-body dt { color: var(--text-muted); }
+  .wx-period-body dd { margin: 0; line-height: 1.5; }
+
+  .wx-taf-raw { margin-top: 22px; }
+  .wx-taf-raw summary {
+    cursor: pointer;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+  }
+  .wx-taf-raw summary:hover { color: var(--fg); }
+  .wx-taf-raw .wx-strip { margin-top: 14px; }
+
+  .wx-notes { margin-top: 48px; padding-bottom: 20px; }
+
+  .wx-notes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 28px;
+  }
+
+  .wx-notes-grid h3 {
+    font-size: 13px;
+    font-weight: 600;
+    margin: 0 0 8px;
+  }
+
+  .wx-notes-grid p {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--text-muted);
+  }
+
+  @media (max-width: 1080px) {
+    .wx-instruments { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .wx-stat-band { grid-template-columns: repeat(3, 1fr); }
+    .wx-stat { border-bottom: 1px solid var(--border); }
+  }
+
+  @media (max-width: 720px) {
+    .wx-instruments { grid-template-columns: minmax(0, 1fr); }
+    .wx-stat-band { grid-template-columns: repeat(2, 1fr); }
+    .wx-decode li { grid-template-columns: 1fr; gap: 4px; }
+    .wx-dec-label { order: -1; }
+    .wx-timeline-ruler { margin-left: 0; }
+    .wx-timeline-rowlabel { width: 74px; padding: 10px 8px; }
+    .wx-category { max-width: none; width: 100%; }
+  }
+</style>
+
+<script>
+  import { windComponents } from '../lib/metar-compute';
+
+  let ageTimer: number | undefined;
+
+  function setupMetarDecoder() {
+    const root = document.querySelector<HTMLElement>('.wx');
+    if (!root) return;
+
+    if (ageTimer) window.clearInterval(ageTimer);
+    const ageEl = root.querySelector<HTMLElement>('[data-wx-age]');
+    const observedIso = root.dataset.obsIso;
+
+    if (ageEl && observedIso) {
+      const observed = new Date(observedIso);
+      const tick = () => {
+        const minutes = Math.floor((Date.now() - observed.getTime()) / 60000);
+        const stale = minutes > 90;
+        const text =
+          minutes < 1
+            ? 'just now'
+            : minutes < 60
+              ? `${minutes} min ago`
+              : `${Math.floor(minutes / 60)} h ${minutes % 60} min ago`;
+        ageEl.textContent = `· ${text}${stale ? ' · older than the hourly cycle' : ''}`;
+        ageEl.style.color = stale ? 'var(--warning)' : '';
+        ageEl.title = observed.toLocaleString();
+      };
+      tick();
+      ageTimer = window.setInterval(tick, 30000);
+    }
+
+    const panel = root.querySelector<HTMLElement>('#wx-wind-panel');
+    if (panel) {
+      const directionDeg = panel.dataset.windDir ? Number(panel.dataset.windDir) : null;
+      const speedKt = panel.dataset.windSpeed ? Number(panel.dataset.windSpeed) : null;
+      const gustKt = panel.dataset.windGust ? Number(panel.dataset.windGust) : null;
+      const variable = panel.dataset.windVariable === '1';
+      const scale = Math.max(1, gustKt ?? speedKt ?? 1);
+
+      const wind = {
+        directionDeg,
+        variable,
+        speed: speedKt,
+        gust: gustKt,
+        unit: 'KT' as const,
+        speedKt,
+        gustKt,
+        varyFrom: null,
+        varyTo: null,
+        calm: speedKt === 0,
+        raw: '',
+      };
+
+      const runwayGroup = root.querySelector<SVGGElement>('#wx-runway-group');
+      const label = panel.querySelector<HTMLElement>('[data-runway-label]');
+      const hdgLabel = panel.querySelector<HTMLElement>('[data-runway-hdg]');
+      const headValue = panel.querySelector<HTMLElement>('[data-headwind-value]');
+      const headNote = panel.querySelector<HTMLElement>('[data-headwind-note]');
+      const headBar = panel.querySelector<HTMLElement>('[data-headwind-bar]');
+      const crossValue = panel.querySelector<HTMLElement>('[data-crosswind-value]');
+      const crossNote = panel.querySelector<HTMLElement>('[data-crosswind-note]');
+      const crossBar = panel.querySelector<HTMLElement>('[data-crosswind-bar]');
+      const gustValue = panel.querySelector<HTMLElement>('[data-gust-value]');
+
+      let runway = Number(panel.dataset.runway || '36');
+
+      const render = () => {
+        const heading = runway * 10;
+        if (label) label.textContent = String(runway).padStart(2, '0');
+        if (hdgLabel) hdgLabel.textContent = `${String(heading).padStart(3, '0')}°`;
+        if (runwayGroup) runwayGroup.setAttribute('transform', `rotate(${heading} 120 120)`);
+
+        const components = windComponents(wind, heading);
+        if (!components) return;
+
+        if (headValue) headValue.textContent = `${Math.abs(components.headwindKt).toFixed(1)} kt`;
+        if (headNote) headNote.textContent = components.headwindKt >= 0 ? 'on the nose' : 'tailwind';
+        if (headBar) headBar.style.width = `${Math.min(100, (Math.abs(components.headwindKt) / scale) * 100)}%`;
+        if (crossValue) crossValue.textContent = `${components.crosswindKt.toFixed(1)} kt`;
+        if (crossNote) crossNote.textContent = components.from === 'none' ? 'aligned' : `from the ${components.from}`;
+        if (crossBar) crossBar.style.width = `${Math.min(100, (components.crosswindKt / scale) * 100)}%`;
+        if (gustValue && components.gustCrosswindKt != null) {
+          gustValue.textContent = `${components.gustCrosswindKt.toFixed(1)} kt crosswind`;
+        }
+      };
+
+      panel.querySelectorAll<HTMLButtonElement>('[data-runway-step]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const step = Number(button.dataset.runwayStep);
+          runway = ((runway - 1 + step + 36) % 36) + 1;
+          render();
+        });
+      });
+
+      const best = panel.querySelector<HTMLButtonElement>('[data-runway-best]');
+      best?.addEventListener('click', () => {
+        runway = Number(best.dataset.runwayBest || '36');
+        render();
+      });
+
+      render();
+    }
+
+    const setActive = (id: string | null, on: boolean) => {
+      if (!id) return;
+      root.querySelectorAll(`.wx-tok[data-tok="${id}"], .wx-decode li[data-dec="${id}"]`).forEach((el) => {
+        el.classList.toggle('is-active', on);
+      });
+    };
+
+    root.querySelectorAll<HTMLButtonElement>('.wx-tok').forEach((token) => {
+      const id = token.dataset.tok ?? null;
+      token.addEventListener('mouseenter', () => setActive(id, true));
+      token.addEventListener('mouseleave', () => setActive(id, false));
+      token.addEventListener('focus', () => setActive(id, true));
+      token.addEventListener('blur', () => setActive(id, false));
+      token.addEventListener('click', () => {
+        const row = root.querySelector(`.wx-decode li[data-dec="${id}"]`);
+        row?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    });
+
+    root.querySelectorAll<HTMLElement>('.wx-decode li').forEach((row) => {
+      const id = row.dataset.dec ?? null;
+      row.addEventListener('mouseenter', () => setActive(id, true));
+      row.addEventListener('mouseleave', () => setActive(id, false));
+    });
+  }
+
+  setupMetarDecoder();
+  document.addEventListener('astro:after-swap', setupMetarDecoder);
+</script>
