@@ -140,7 +140,7 @@ const examples = [
   .nt-alert { margin-top: 26px; max-width: 760px; }
 
   .nt-intro { margin-top: 52px; border-top: 1px solid var(--border); padding-top: 28px; }
-  .nt-intro-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 32px; }
+  .nt-intro-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 32px; }
   .nt-intro-grid p { margin: 10px 0 0; font-size: 13px; line-height: 1.65; color: var(--text-muted); }
 
   @media (max-width: 640px) {

@@ -256,25 +256,27 @@ const overallOk = cgStatus !== false && !limits.overGross;
         <span class="col">Moment breakdown</span>
         <span class="wb-panel-note">Moment = weight × arm, at every station, summed</span>
       </header>
-      <table class="wb-table" data-wb-table>
-        <thead><tr><th>Item</th><th class="num">Weight (lb)</th><th class="num">Arm (in)</th><th class="num">Moment (lb-in)</th></tr></thead>
-        <tbody>
-          {result.rows.map((row) => (
-            <tr class={row.weightLb == null ? 'is-empty' : ''}>
-              <td>{row.name}</td>
-              <td class="num">{row.weightLb != null ? row.weightLb.toLocaleString('en-US') : '—'}</td>
-              <td class="num">{row.armIn != null ? row.armIn.toFixed(2) : '—'}</td>
-              <td class="num">{row.momentInLb != null ? Math.round(row.momentInLb).toLocaleString('en-US') : '—'}</td>
+      <div class="table-scroll">
+        <table class="wb-table" data-wb-table>
+          <thead><tr><th>Item</th><th class="num">Weight (lb)</th><th class="num">Arm (in)</th><th class="num">Moment (lb-in)</th></tr></thead>
+          <tbody>
+            {result.rows.map((row) => (
+              <tr class={row.weightLb == null ? 'is-empty' : ''}>
+                <td>{row.name}</td>
+                <td class="num">{row.weightLb != null ? row.weightLb.toLocaleString('en-US') : '—'}</td>
+                <td class="num">{row.armIn != null ? row.armIn.toFixed(2) : '—'}</td>
+                <td class="num">{row.momentInLb != null ? Math.round(row.momentInLb).toLocaleString('en-US') : '—'}</td>
+              </tr>
+            ))}
+            <tr class="wb-table-total">
+              <td>Total</td>
+              <td class="num" data-wb-table-weight>{hasAnyInput ? Math.round(result.totalWeightLb).toLocaleString('en-US') : '—'}</td>
+              <td class="num">CG {result.cgIn != null ? result.cgIn.toFixed(2) : '—'}</td>
+              <td class="num" data-wb-table-moment>{hasAnyInput ? Math.round(result.totalMomentInLb).toLocaleString('en-US') : '—'}</td>
             </tr>
-          ))}
-          <tr class="wb-table-total">
-            <td>Total</td>
-            <td class="num" data-wb-table-weight>{hasAnyInput ? Math.round(result.totalWeightLb).toLocaleString('en-US') : '—'}</td>
-            <td class="num">CG {result.cgIn != null ? result.cgIn.toFixed(2) : '—'}</td>
-            <td class="num" data-wb-table-moment>{hasAnyInput ? Math.round(result.totalMomentInLb).toLocaleString('en-US') : '—'}</td>
-          </tr>
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <section class="wb-notes">
@@ -327,7 +329,7 @@ const overallOk = cgStatus !== false && !limits.overGross;
   .wb-limits { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 14px; }
   .wb-limits summary { cursor: pointer; font-size: 13px; color: var(--text-muted); padding: 4px 0 14px; }
   .wb-limits summary:hover { color: var(--fg); }
-  .wb-limits-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .wb-limits-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
   .wb-field { display: flex; flex-direction: column; gap: 6px; }
   .wb-input-wrap { position: relative; display: flex; align-items: center; }
   .wb-input-wrap .wb-input { padding-right: 40px; }
@@ -387,10 +389,10 @@ const overallOk = cgStatus !== false && !limits.overGross;
   .wb-faq-item p { margin: 0 0 16px; font-size: 13px; line-height: 1.65; color: var(--text-muted); }
 
   @media (max-width: 900px) {
-    .wb-layout { grid-template-columns: 1fr; }
+    .wb-layout { grid-template-columns: minmax(0, 1fr); }
     .wb-results { position: static; }
-    .wb-row { grid-template-columns: 1fr 1fr; }
-    .wb-limits-grid { grid-template-columns: 1fr; }
+    .wb-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .wb-limits-grid { grid-template-columns: minmax(0, 1fr); }
   }
 </style>
 

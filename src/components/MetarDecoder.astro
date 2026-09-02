@@ -992,7 +992,7 @@ const faqItems = [
 
   .wx-stat-band {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     border-top: 1px solid var(--border);
     margin-top: 26px;
   }
@@ -1020,7 +1020,7 @@ const faqItems = [
 
   .wx-flags {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
     gap: 1px;
     background: var(--border);
     border: 1px solid var(--border);
@@ -1362,7 +1362,7 @@ const faqItems = [
 
   .wx-vis-detail {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
     gap: 28px;
   }
 
@@ -1441,7 +1441,7 @@ const faqItems = [
 
   .wx-decode li {
     display: grid;
-    grid-template-columns: 132px 150px 1fr;
+    grid-template-columns: 132px 150px minmax(0, 1fr);
     gap: 16px;
     align-items: baseline;
     padding: 10px 8px;
@@ -1592,7 +1592,7 @@ const faqItems = [
 
   .wx-periods {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
     gap: 1px;
     background: var(--border);
     border: 1px solid var(--border);
@@ -1624,7 +1624,7 @@ const faqItems = [
   .wx-period-body { margin: 0; }
   .wx-period-body > div {
     display: grid;
-    grid-template-columns: 92px 1fr;
+    grid-template-columns: 92px minmax(0, 1fr);
     gap: 12px;
     padding: 7px 0;
     border-bottom: 1px solid var(--border);
@@ -1715,14 +1715,14 @@ const faqItems = [
 
   @media (max-width: 1080px) {
     .wx-instruments { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .wx-stat-band { grid-template-columns: repeat(3, 1fr); }
+    .wx-stat-band { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .wx-stat { border-bottom: 1px solid var(--border); }
   }
 
   @media (max-width: 720px) {
     .wx-instruments { grid-template-columns: minmax(0, 1fr); }
-    .wx-stat-band { grid-template-columns: repeat(2, 1fr); }
-    .wx-decode li { grid-template-columns: 1fr; gap: 4px; }
+    .wx-stat-band { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .wx-decode li { grid-template-columns: minmax(0, 1fr); gap: 4px; }
     .wx-dec-label { order: -1; }
     .wx-timeline-ruler { margin-left: 0; }
     .wx-timeline-rowlabel { width: 74px; padding: 10px 8px; }
@@ -1733,7 +1733,7 @@ const faqItems = [
 
   @media (max-width: 480px) {
     .wx-panel { padding: 16px 14px 20px; }
-    .wx-stat-band { grid-template-columns: 1fr; }
+    .wx-stat-band { grid-template-columns: minmax(0, 1fr); }
     .wx-stat { border-right: none; border-bottom: 1px solid var(--border); padding: 14px 0; }
     .wx-stat:first-child { padding-top: 0; }
     .wx-stat:last-child { border-bottom: none; }

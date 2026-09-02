@@ -178,19 +178,21 @@ const rollLabel = phase === 'takeoff' ? 'ground roll' : 'landing roll';
         <span class="col">Derivation, step by step</span>
         <span class="tld-panel-note">Each row multiplies the running distance from the row above</span>
       </header>
-      <table class="tld-table" data-tld-table>
-        <thead><tr><th>Step</th><th class="num">Factor</th><th class="num">Running distance</th><th>Why</th></tr></thead>
-        <tbody data-tld-steps>
-          {(result?.steps ?? []).map((step) => (
-            <tr>
-              <td>{step.label}</td>
-              <td class="num">×{step.factor.toFixed(3)}</td>
-              <td class="num">{Math.round(step.runningFt).toLocaleString('en-US')} ft</td>
-              <td class="tld-why">{step.detail}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div class="table-scroll">
+        <table class="tld-table" data-tld-table>
+          <thead><tr><th>Step</th><th class="num">Factor</th><th class="num">Running distance</th><th>Why</th></tr></thead>
+          <tbody data-tld-steps>
+            {(result?.steps ?? []).map((step) => (
+              <tr>
+                <td>{step.label}</td>
+                <td class="num">×{step.factor.toFixed(3)}</td>
+                <td class="num">{Math.round(step.runningFt).toLocaleString('en-US')} ft</td>
+                <td class="tld-why">{step.detail}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <section class="tld-notes">
@@ -227,7 +229,7 @@ const rollLabel = phase === 'takeoff' ? 'ground roll' : 'landing roll';
   .tld-phase-toggle input { position: absolute; opacity: 0; pointer-events: none; }
 
   .tld-fieldset { margin-bottom: 26px; }
-  .tld-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 12px; }
+  .tld-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 12px; }
   .tld-field { display: flex; flex-direction: column; gap: 6px; }
   .tld-input-wrap { position: relative; display: flex; align-items: center; }
   .tld-input { height: 42px; padding: 0 12px; font-size: 14px; font-family: var(--font-sans); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border-input); border-radius: 0; width: 100%; }
@@ -266,12 +268,12 @@ const rollLabel = phase === 'takeoff' ? 'ground roll' : 'landing roll';
   .tld-faq-item p { margin: 0 0 16px; font-size: 13px; line-height: 1.65; color: var(--text-muted); }
 
   @media (max-width: 900px) {
-    .tld-layout { grid-template-columns: 1fr; }
+    .tld-layout { grid-template-columns: minmax(0, 1fr); }
     .tld-results { position: static; }
-    .tld-grid { grid-template-columns: 1fr 1fr; }
+    .tld-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   }
   @media (max-width: 520px) {
-    .tld-grid { grid-template-columns: 1fr; }
+    .tld-grid { grid-template-columns: minmax(0, 1fr); }
   }
 </style>
 
