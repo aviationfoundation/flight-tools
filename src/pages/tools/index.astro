@@ -9,7 +9,7 @@ const tools = [
     eyebrow: 'Weather',
     title: 'METAR & TAF Decoder',
     description:
-      'Read any observation or forecast as instruments instead of code. Wind rose with runway crosswind components, cloud layers drawn by height and coverage, density altitude against field elevation, and the TAF laid out on a timeline.',
+      'Decodes surface observations and terminal aerodrome forecasts into graphical instruments. Includes dynamic runway crosswind components, cloud layer profiles, density altitude calculations, and interactive TAF timelines.',
     points: [
       'Full METAR body plus the US remark set',
       'TAF change groups on a timeline coloured by flight category',
@@ -22,7 +22,7 @@ const tools = [
     eyebrow: 'Weather & NAS',
     title: 'NOTAM Decoder',
     description:
-      'Paste a NOTAM and read it as a sentence instead of a teletype line. The Q-line’s subject and condition codes expanded, every A)–G) item translated, and the FAA/ICAO contraction set spelled out in full.',
+      'Translates raw NOTAM teletype into structured language. Decodes Q-line subject and condition codes, parses ICAO Annex 15 fields, and expands standardized aeronautical contractions.',
     points: [
       'Full ICAO Annex 15 item structure, A) through G)',
       'Q-line decoded field by field — subject, condition, traffic, scope',
@@ -35,7 +35,7 @@ const tools = [
     eyebrow: 'Flight planning',
     title: 'E6B Flight Computer',
     description:
-      'The three calculations the aluminum wheel was built for: a wind triangle for heading and groundspeed, true airspeed from indicated airspeed and density altitude, and time, fuel and distance solved from any two of the three.',
+      'Digital aeronautical flight computer solving wind triangles for heading and groundspeed, true airspeed calculations from pressure altitude and temperature, and time-speed-distance fuel equations.',
     points: [
       'Wind correction angle, heading and groundspeed on a compass rose',
       'True airspeed from CAS, pressure altitude and OAT',
@@ -48,7 +48,7 @@ const tools = [
     eyebrow: 'Flight planning',
     title: 'Weight & Balance Worksheet',
     description:
-      'Aircraft-agnostic on purpose — no chart is built in. Load your own empty weight, stations and POH limits, and see total weight, moment, CG and whether the loading falls inside your envelope.',
+      'Configurable aircraft weight and balance calculator. Define station arms, empty weights, and POH envelope limits to verify center of gravity within approved operating margins.',
     points: [
       'Moment breakdown, station by station, shown in full',
       'Simple forward/aft limits or a full envelope polygon',
@@ -61,7 +61,7 @@ const tools = [
     eyebrow: 'Flight planning',
     title: 'Takeoff & Landing Distance',
     description:
-      'Derived, not looked up. Enter your own POH’s baseline distance and this walks it through the correction chain — weight, density altitude, wind, surface, slope — with every multiplier shown.',
+      'Performance calculation tool applying standard correction factors for density altitude, aircraft weight, runway headwind/tailwind components, surface type, and runway slope.',
     points: [
       'Step-by-step derivation, not a single opaque number',
       'Weight, density altitude, wind, surface and slope corrections',
@@ -74,7 +74,7 @@ const tools = [
     eyebrow: 'Maintenance',
     title: 'Airworthiness Directive Decoder',
     description:
-      'An AD is already in English — the hard part is structure. Paste one and get its lettered paragraphs labelled, its supersession chain pulled out, and its compliance-time language turned into a calculator.',
+      'Parses FAA Airworthiness Directives into structured compliance requirements, extracting applicability clauses, effective dates, supersession chains, and recurring intervals.',
     points: [
       'Lettered paragraphs (a)–(g) structured and labelled',
       'AD number, amendment, docket and supersession chain extracted',
@@ -87,7 +87,7 @@ const tools = [
     eyebrow: 'Currency',
     title: 'Currency & Flight Review Tracker',
     description:
-      'Log flights as they happen and this works out 90-day passenger currency by day and night, your flight review’s 24-month window, and instrument currency’s rolling 6 months — tied to your account and your dashboard.',
+      'Tracks regulatory flight currency intervals including 90-day passenger carriage (day and night), 24-calendar-month flight reviews, and rolling 6-month instrument proficiency.',
     points: [
       'Rolling-window math, not a fixed-offset approximation',
       'Day and night passenger currency, flight review, instrument currency',
@@ -100,7 +100,7 @@ const tools = [
 
 <Layout
   title="Tools — aviation.foundation"
-  description="Free aviation tools published by aviation.foundation. A METAR and TAF decoder that reads observations as instruments, with no account and no advertising."
+  description="Free aviation tools published by aviation.foundation. Operational utilities with no account and no advertising."
   currentPath="/tools"
 >
   <div class="page-container container-site px-site">
@@ -108,10 +108,7 @@ const tools = [
       <div class="eyebrow">Utilities</div>
       <h1 class="serif page-title">Tools</h1>
       <p class="page-lead">
-        Small, exact utilities for people actually training and flying. Same rules as the rest of
-        this site: no advertising in them, and every derived number labelled as derived. All but one
-        need no account — the currency tracker is the exception, since the point of it is a log that
-        persists on your dashboard between visits.
+        Operational utilities for flight training and flight operations. Non-commercial, free to access, and transparently derived from primary aviation data sources.
       </p>
     </header>
 
