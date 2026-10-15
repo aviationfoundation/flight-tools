@@ -25,9 +25,9 @@ const tools = [
       'Translates raw NOTAM teletype into structured language. Decodes Q-line subject and condition codes, parses ICAO Annex 15 fields, and expands standardized aeronautical contractions.',
     points: [
       'Full ICAO Annex 15 item structure, A) through G)',
-      'Q-line decoded field by field — subject, condition, traffic, scope',
+      'Q-line decoded field by field - subject, condition, traffic, scope',
       'Contractions spelled out; anything unrecognised left unchanged',
-      'Paste-based — no FAA API key required, no account, no advertising',
+      'Paste-based - no FAA API key required, no account, no advertising',
     ],
   },
   {
@@ -39,7 +39,7 @@ const tools = [
     points: [
       'Wind correction angle, heading and groundspeed on a compass rose',
       'True airspeed from CAS, pressure altitude and OAT',
-      'Time/fuel/distance solver — enter any two, get the third',
+      'Time/fuel/distance solver - enter any two, get the third',
       'Recomputes live as you type, with no account and no advertising',
     ],
   },
@@ -66,7 +66,7 @@ const tools = [
       'Step-by-step derivation, not a single opaque number',
       'Weight, density altitude, wind, surface and slope corrections',
       'Optional 50 ft obstacle distance alongside ground roll',
-      'No aircraft chart baked in — you supply your own baseline',
+      'No aircraft chart baked in - you supply your own baseline',
     ],
   },
   {
@@ -92,25 +92,44 @@ const tools = [
       'Rolling-window math, not a fixed-offset approximation',
       'Day and night passenger currency, flight review, instrument currency',
       'Feeds a status card on your dashboard overview',
-      'Requires a free account — the one tool on this page that does',
+      'Requires a free account - the one tool on this page that does',
     ],
   },
 ];
 ---
 
 <Layout
-  title="Tools — aviation.foundation"
-  description="Free aviation tools published by aviation.foundation. Operational utilities with no account and no advertising."
+  title="Digital Flight Lab · aviation.foundation"
+  description="Free, browser-based aeronautical laboratories and flight planning utilities. Explore aerodynamics, weather, wind vectors, and center-of-gravity physics without equipment barriers."
   currentPath="/tools"
 >
   <div class="page-container container-site px-site">
     <header class="page-header">
-      <div class="eyebrow">Utilities</div>
-      <h1 class="serif page-title">Tools</h1>
+      <div class="eyebrow">Pathways Discover · Flight Lab</div>
+      <h1 class="serif page-title">Digital Flight Lab</h1>
       <p class="page-lead">
-        Operational utilities for flight training and flight operations. Non-commercial, free to access, and transparently derived from primary aviation data sources.
+        Interactive aeronautical laboratories and flight planning utilities. Non-commercial, free to access, and designed for curious students, air cadets, STEM classrooms, and active pilots to explore aerodynamics, weather, and aircraft physics without airport barriers.
       </p>
     </header>
+
+    <div class="lab-curriculum-strip">
+      <div class="lab-pill">
+        <span class="lab-pill-num col">01</span>
+        <span class="lab-pill-label">Atmospheric Physics & Weather</span>
+      </div>
+      <div class="lab-pill">
+        <span class="lab-pill-num col">02</span>
+        <span class="lab-pill-label">Vector Navigation & Triangles</span>
+      </div>
+      <div class="lab-pill">
+        <span class="lab-pill-num col">03</span>
+        <span class="lab-pill-label">Moments & Center of Gravity</span>
+      </div>
+      <div class="lab-pill">
+        <span class="lab-pill-num col">04</span>
+        <span class="lab-pill-label">Performance & Density Altitude</span>
+      </div>
+    </div>
 
     <section class="tool-list">
       {tools.map((tool) => (
@@ -150,7 +169,37 @@ const tools = [
     color: var(--text-muted);
   }
 
-  .tool-list { margin-top: 44px; border-top: 1px solid var(--border-strong); }
+  .lab-curriculum-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 28px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+  }
+
+  .lab-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: var(--surface-card);
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    font-size: 12.5px;
+  }
+
+  .lab-pill-num {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent-sky);
+  }
+
+  .lab-pill-label {
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .tool-list { margin-top: 36px; border-top: 1px solid var(--border-strong); }
 
   .tool-card {
     display: grid;

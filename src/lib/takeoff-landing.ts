@@ -53,7 +53,7 @@ export function computeDistance(input: DistanceInput): DistanceResult {
     label: 'POH baseline',
     factor: 1,
     runningFt: running,
-    detail: `Sea level, standard day, ${input.baselineWeightLb.toLocaleString('en-US')} lb, no wind, paved level runway — read straight off your chart.`,
+    detail: `Sea level, standard day, ${input.baselineWeightLb.toLocaleString('en-US')} lb, no wind, paved level runway - read straight off your chart.`,
   });
 
   const weightRatio = input.actualWeightLb / input.baselineWeightLb;
@@ -64,7 +64,7 @@ export function computeDistance(input: DistanceInput): DistanceResult {
     label: 'Weight',
     factor: weightFactor,
     runningFt: running,
-    detail: `${input.actualWeightLb.toLocaleString('en-US')} lb vs. ${input.baselineWeightLb.toLocaleString('en-US')} lb baseline — distance scales with the square of the weight ratio (${weightRatio.toFixed(3)}²).`,
+    detail: `${input.actualWeightLb.toLocaleString('en-US')} lb vs. ${input.baselineWeightLb.toLocaleString('en-US')} lb baseline - distance scales with the square of the weight ratio (${weightRatio.toFixed(3)}²).`,
   });
 
   const sigma = densityRatio(input.pressureAltFt, input.oatC);
@@ -76,7 +76,7 @@ export function computeDistance(input: DistanceInput): DistanceResult {
     label: 'Density altitude',
     factor: densityFactor,
     runningFt: running,
-    detail: `Pressure altitude ${input.pressureAltFt.toLocaleString('en-US')} ft, OAT ${input.oatC}°C — density altitude ${densityAltFt.toLocaleString('en-US')} ft, σ = ${sigma.toFixed(3)}. Thinner air needs more ground speed to reach the same lift, so distance grows by 1/σ.`,
+    detail: `Pressure altitude ${input.pressureAltFt.toLocaleString('en-US')} ft, OAT ${input.oatC}°C - density altitude ${densityAltFt.toLocaleString('en-US')} ft, σ = ${sigma.toFixed(3)}. Thinner air needs more ground speed to reach the same lift, so distance grows by 1/σ.`,
   });
 
   const wind = input.windComponentKt;
@@ -89,10 +89,10 @@ export function computeDistance(input: DistanceInput): DistanceResult {
     runningFt: running,
     detail:
       wind === 0
-        ? 'No wind component entered — no correction applied.'
+        ? 'No wind component entered - no correction applied.'
         : wind > 0
-          ? `${wind} kt headwind component — roughly 10% less distance per 9 kt, by the FAA rule of thumb.`
-          : `${Math.abs(wind)} kt tailwind component — roughly 10% more distance per 2 kt, by the FAA rule of thumb. Most POHs do not certify tailwind takeoffs or landings beyond about 10 kt.`,
+          ? `${wind} kt headwind component - roughly 10% less distance per 9 kt, by the FAA rule of thumb.`
+          : `${Math.abs(wind)} kt tailwind component - roughly 10% more distance per 2 kt, by the FAA rule of thumb. Most POHs do not certify tailwind takeoffs or landings beyond about 10 kt.`,
   });
 
   const surfaceFactor = SURFACE_FACTORS[input.surface][input.phase];
@@ -104,8 +104,8 @@ export function computeDistance(input: DistanceInput): DistanceResult {
     runningFt: running,
     detail:
       surfaceFactor === 1
-        ? `${SURFACE_LABELS[input.surface]} — matches the baseline surface, no correction.`
-        : `${SURFACE_LABELS[input.surface]} — a generic allowance, not your aircraft's chart. Check your POH supplement or AC 91-79A if one applies to your type.`,
+        ? `${SURFACE_LABELS[input.surface]} - matches the baseline surface, no correction.`
+        : `${SURFACE_LABELS[input.surface]} - a generic allowance, not your aircraft's chart. Check your POH supplement or AC 91-79A if one applies to your type.`,
   });
 
   const slope = input.slopePercent;
@@ -119,8 +119,8 @@ export function computeDistance(input: DistanceInput): DistanceResult {
     runningFt: running,
     detail:
       slope === 0
-        ? 'Level runway — no correction applied.'
-        : `${Math.abs(slope)}% ${slope > 0 ? 'upslope' : 'downslope'} — roughly 10% more ${input.phase} distance per 1% of grade working against the roll.`,
+        ? 'Level runway - no correction applied.'
+        : `${Math.abs(slope)}% ${slope > 0 ? 'upslope' : 'downslope'} - roughly 10% more ${input.phase} distance per 1% of grade working against the roll.`,
   });
 
   return {

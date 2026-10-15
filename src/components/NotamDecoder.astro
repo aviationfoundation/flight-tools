@@ -24,13 +24,13 @@ if (decoded.effectiveFrom) {
   const from = toDate(decoded.effectiveFrom);
   const to = decoded.effectiveTo ? toDate(decoded.effectiveTo) : null;
   if (decoded.permanent) {
-    status = now >= from ? { label: 'Active — permanent', tone: 'active' } : { label: 'Not yet active — permanent once effective', tone: 'future' };
+    status = now >= from ? { label: 'Active - permanent', tone: 'active' } : { label: 'Not yet active - permanent once effective', tone: 'future' };
   } else if (to) {
     if (now < from) status = { label: 'Not yet active', tone: 'future' };
     else if (now > to) status = { label: 'Expired', tone: 'expired' };
     else status = { label: 'Active now', tone: 'active' };
   } else {
-    status = now >= from ? { label: 'Active — no stated end', tone: 'active' } : { label: 'Not yet active', tone: 'future' };
+    status = now >= from ? { label: 'Active - no stated end', tone: 'active' } : { label: 'Not yet active', tone: 'future' };
   }
 }
 
@@ -60,7 +60,7 @@ const qRows = decoded.qLine
           {decoded.series && decoded.number && <span class="num">{decoded.series}{decoded.number}</span>}
           {decoded.type && <span class="nd-type-chip">{decoded.type}</span>}
           {decoded.replaces && <span class="nd-replaces">replaces {decoded.replaces}</span>}
-          {decoded.unstructured && <span class="nd-type-chip nd-type-chip-warn">Unstructured paste — best effort</span>}
+          {decoded.unstructured && <span class="nd-type-chip nd-type-chip-warn">Unstructured paste - best effort</span>}
         </p>
       </div>
       <div class={`nd-status nd-status-${status.tone}`}>
@@ -75,7 +75,7 @@ const qRows = decoded.qLine
       <div class="nd-timing">
         <div class="nd-timing-item">
           <span class="col">Effective from</span>
-          <span class="num">{decoded.effectiveFrom ? `${pad2(decoded.effectiveFrom.day)} ${['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][decoded.effectiveFrom.month]} ${decoded.effectiveFrom.year} ${pad2(decoded.effectiveFrom.hour)}:${pad2(decoded.effectiveFrom.minute)}Z` : '—'}</span>
+          <span class="num">{decoded.effectiveFrom ? `${pad2(decoded.effectiveFrom.day)} ${['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][decoded.effectiveFrom.month]} ${decoded.effectiveFrom.year} ${pad2(decoded.effectiveFrom.hour)}:${pad2(decoded.effectiveFrom.minute)}Z` : '-'}</span>
         </div>
         <div class="nd-timing-item">
           <span class="col">Effective until</span>
@@ -84,7 +84,7 @@ const qRows = decoded.qLine
               ? 'No end stated (permanent)'
               : decoded.effectiveTo
                 ? `${pad2(decoded.effectiveTo.day)} ${['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][decoded.effectiveTo.month]} ${decoded.effectiveTo.year} ${pad2(decoded.effectiveTo.hour)}:${pad2(decoded.effectiveTo.minute)}Z${decoded.estimatedEnd ? ' (estimated)' : ''}`
-                : '—'}
+                : '-'}
           </span>
         </div>
       </div>
@@ -94,7 +94,7 @@ const qRows = decoded.qLine
   {qRows.length > 0 && (
     <section class="nd-panel">
       <header class="nd-panel-head">
-        <span class="col">01 — Q-line</span>
+        <span class="col">01 - Q-line</span>
         <span class="nd-panel-note">The coded summary every NOTAM carries, expanded field by field</span>
       </header>
       <dl class="nd-qgrid">
@@ -114,7 +114,7 @@ const qRows = decoded.qLine
   {!decoded.unstructured && orderedFields.length > 0 && (
     <section class="nd-panel">
       <header class="nd-panel-head">
-        <span class="col">02 — Item by item</span>
+        <span class="col">02 - Item by item</span>
         <span class="nd-panel-note">Each A)–G) item, translated</span>
       </header>
       <ol class="nd-fields">
@@ -134,7 +134,7 @@ const qRows = decoded.qLine
   {decoded.unstructured && (
     <section class="nd-panel">
       <header class="nd-panel-head">
-        <span class="col">02 — Decoded text</span>
+        <span class="col">02 - Decoded text</span>
         <span class="nd-panel-note">No A)–G) markers were found, so the whole paste was expanded as free text</span>
       </header>
       <p class="nd-field-plain nd-unstructured-text">{decoded.plainSummary}</p>
@@ -151,7 +151,7 @@ const qRows = decoded.qLine
 
   <section class="nd-panel">
     <header class="nd-panel-head">
-      <span class="col">03 — Raw text</span>
+      <span class="col">03 - Raw text</span>
     </header>
     <pre class="nd-raw num">{decoded.raw}</pre>
   </section>

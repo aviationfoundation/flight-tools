@@ -629,7 +629,7 @@ function describeField(code: DecodedField['code'], value: string): string {
       return t ? `Effective from ${formatNotamTime(t)}.` : `Effective from ${value}.`;
     }
     case 'C': {
-      if (/PERM/i.test(value)) return 'Permanent — no end date given.';
+      if (/PERM/i.test(value)) return 'Permanent - no end date given.';
       const t = parseNotamTime(value);
       return t ? `Effective until ${formatNotamTime(t)}${/EST/i.test(value) ? ' (estimated)' : ''}.` : `Effective until ${value}.`;
     }
@@ -670,7 +670,7 @@ function buildPlainSummary(parts: {
 
   const chunks: string[] = [];
   if (aField) chunks.push(`At ${aField.raw.split(/\s+/).join(', ')}`);
-  if (subject) chunks.push(condition ? `${subject.toLowerCase()} — ${condition.toLowerCase()}` : subject.toLowerCase());
+  if (subject) chunks.push(condition ? `${subject.toLowerCase()} - ${condition.toLowerCase()}` : subject.toLowerCase());
   const lead = chunks.join(', ') || 'This NOTAM';
 
   const bodyText = eField ? expandContractions(eField.raw) : 'no free-text description was included.';

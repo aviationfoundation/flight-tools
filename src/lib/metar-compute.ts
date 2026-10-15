@@ -4,9 +4,9 @@ export type FlightCategory = 'VFR' | 'MVFR' | 'IFR' | 'LIFR' | 'UNKNOWN';
 
 export const CATEGORY_MEANING: Record<FlightCategory, string> = {
   VFR: 'Ceiling above 3,000 ft and visibility greater than 5 sm.',
-  MVFR: 'Marginal VFR — ceiling 1,000–3,000 ft or visibility 3–5 sm.',
+  MVFR: 'Marginal VFR - ceiling 1,000–3,000 ft or visibility 3–5 sm.',
   IFR: 'Ceiling 500–999 ft or visibility 1 to under 3 sm.',
-  LIFR: 'Low IFR — ceiling under 500 ft or visibility under 1 sm.',
+  LIFR: 'Low IFR - ceiling under 500 ft or visibility under 1 sm.',
   UNKNOWN: 'Not enough reported data to determine a category.',
 };
 
@@ -150,7 +150,7 @@ export function advisories(report: DecodedMetar, elevationFt: number | null): Ad
     if (weather.descriptor === 'TS') {
       out.push({ tone: 'danger', title: 'Thunderstorm', detail: weather.text });
     } else if (weather.descriptor === 'FZ') {
-      out.push({ tone: 'danger', title: 'Freezing precipitation', detail: `${weather.text} — airframe icing on the ground and in the climb.` });
+      out.push({ tone: 'danger', title: 'Freezing precipitation', detail: `${weather.text} - airframe icing on the ground and in the climb.` });
     } else if (weather.other === 'FC') {
       out.push({ tone: 'danger', title: 'Funnel cloud', detail: weather.text });
     }
@@ -210,7 +210,7 @@ export function plausibilityFlags(report: DecodedMetar): Advisory[] {
     out.push({
       tone: 'warning',
       title: 'Unrealistic METAR: dew point above temperature',
-      detail: `Dew point ${report.dewpointC.toFixed(1)}°C is higher than temperature ${report.temperatureC.toFixed(1)}°C. Dew point cannot exceed temperature — likely a transcription or sensor error.`,
+      detail: `Dew point ${report.dewpointC.toFixed(1)}°C is higher than temperature ${report.temperatureC.toFixed(1)}°C. Dew point cannot exceed temperature - likely a transcription or sensor error.`,
     });
   }
 
@@ -250,7 +250,7 @@ export function plausibilityFlags(report: DecodedMetar): Advisory[] {
     out.push({
       tone: 'warning',
       title: 'Unrealistic METAR: cloud base out of range',
-      detail: 'A reported cloud base above 60,000 ft is beyond what a station\'s ceilometer measures — check the raw group.',
+      detail: 'A reported cloud base above 60,000 ft is beyond what a station\'s ceilometer measures - check the raw group.',
     });
   }
 

@@ -32,7 +32,7 @@ const examples = [
 ---
 
 <Layout
-  title={decoded?.fields.find((f) => f.code === 'A') ? `${decoded.fields.find((f) => f.code === 'A')?.raw} NOTAM decoded — aviation.foundation` : 'NOTAM Decoder — aviation.foundation'}
+  title={decoded?.fields.find((f) => f.code === 'A') ? `${decoded.fields.find((f) => f.code === 'A')?.raw} NOTAM decoded · aviation.foundation` : 'NOTAM Decoder · aviation.foundation'}
   description="Paste an ICAO-format NOTAM and read it in plain English: the Q-line's subject and condition codes expanded, every A)-G) item translated, and the FAA/ICAO contraction set spelled out. Free, no account, no advertising."
   currentPath="/tools/notam"
 >
@@ -44,7 +44,7 @@ const examples = [
       <p class="page-lead">
         Paste a NOTAM and read it as a sentence instead of a teletype line. The Q-line's subject and
         condition codes are expanded, every A)–G) item is translated, and the contraction set inside
-        the free text — RWY, TWY, U/S, WIP and the rest — is spelled out in full. Anything this
+        the free text - RWY, TWY, U/S, WIP and the rest - is spelled out in full. Anything this
         decoder doesn't recognise is left exactly as written rather than guessed at.
       </p>
     </header>
@@ -62,7 +62,7 @@ const examples = [
         >{rawParam}</textarea>
         <div class="nt-paste-actions">
           <p class="nt-paste-help">
-            Copy the full NOTAM, headers and all — the A)/B)/C)/E) markers are what this decoder keys
+            Copy the full NOTAM, headers and all - the A)/B)/C)/E) markers are what this decoder keys
             off. Older US domestic-format NOTAMs (no letter markers) are decoded as loose text on a
             best-effort basis.
           </p>
@@ -106,7 +106,7 @@ const examples = [
               <div class="col">What it will not do</div>
               <p>
                 Guess. A contraction this decoder doesn't recognise is shown unchanged in the plain-
-                English text rather than approximated, and this is a study and planning tool — not a
+                English text rather than approximated, and this is a study and planning tool - not a
                 substitute for an official briefing before a flight.
               </p>
             </div>

@@ -56,15 +56,15 @@ function pad2(n: number): string {
 }
 
 function fmtInt(n: number | null | undefined): string {
-  return n == null ? '—' : Math.round(n).toLocaleString('en-US');
+  return n == null ? '-' : Math.round(n).toLocaleString('en-US');
 }
 
 const windHeadline = !report.wind
-  ? { value: '—', unit: '' }
+  ? { value: '-', unit: '' }
   : report.wind.calm
     ? { value: 'Calm', unit: '' }
     : {
-        value: report.wind.gustKt != null ? `${report.wind.speedKt}G${report.wind.gustKt}` : String(report.wind.speedKt ?? '—'),
+        value: report.wind.gustKt != null ? `${report.wind.speedKt}G${report.wind.gustKt}` : String(report.wind.speedKt ?? '-'),
         unit: report.wind.variable
           ? 'kt · variable'
           : report.wind.directionDeg != null
@@ -78,22 +78,22 @@ const visHeadline = report.visibility
         value: `${report.visibility.greaterThan ? '10+' : formatMiles(Math.round(report.visibility.statuteMiles * 100) / 100)}`,
         unit: 'statute miles',
       }
-    : { value: '—', unit: '' }
-  : { value: '—', unit: 'not reported' };
+    : { value: '-', unit: '' }
+  : { value: '-', unit: 'not reported' };
 
 const ceilingHeadline = ceiling != null
   ? { value: fmtInt(ceiling), unit: 'ft AGL' }
   : report.clouds.some((c) => c.oktas === 0) || report.cavok
     ? { value: 'Clear', unit: 'no ceiling' }
-    : { value: '—', unit: 'not reported' };
+    : { value: '-', unit: 'not reported' };
 
 const tempHeadline = report.temperatureC != null
-  ? { value: `${report.temperatureC > 0 ? '' : ''}${Math.round(report.temperatureC * 10) / 10}°`, unit: `C · dew ${report.dewpointC != null ? `${Math.round(report.dewpointC * 10) / 10}°` : '—'}` }
-  : { value: '—', unit: '' };
+  ? { value: `${report.temperatureC > 0 ? '' : ''}${Math.round(report.temperatureC * 10) / 10}°`, unit: `C · dew ${report.dewpointC != null ? `${Math.round(report.dewpointC * 10) / 10}°` : '-'}` }
+  : { value: '-', unit: '' };
 
 const pressureHeadline = report.altimeterInHg != null
   ? { value: report.altimeterInHg.toFixed(2), unit: `inHg · ${report.altimeterHpa!.toFixed(0)} hPa` }
-  : { value: '—', unit: '' };
+  : { value: '-', unit: '' };
 
 const headlineStats = [
   { label: 'Wind', ...windHeadline },
@@ -245,7 +245,7 @@ function conditionSummary(period: TafPeriod): string {
     parts.push(
       period.wind.calm
         ? 'calm'
-        : `${period.wind.variable ? 'VRB' : pad2(period.wind.directionDeg ?? 0)}°/${period.wind.speedKt ?? '—'}${period.wind.gustKt ? `G${period.wind.gustKt}` : ''} kt`,
+        : `${period.wind.variable ? 'VRB' : pad2(period.wind.directionDeg ?? 0)}°/${period.wind.speedKt ?? '-'}${period.wind.gustKt ? `G${period.wind.gustKt}` : ''} kt`,
     );
   }
   if (period.visibility) {
@@ -335,7 +335,7 @@ const categoryClass = `cat-${category.toLowerCase()}`;
 const faqItems = [
   {
     q: 'How is the flight category decided?',
-    a: 'From the worse of ceiling and prevailing visibility, using the FAA thresholds: LIFR below 500 ft or 1 sm, IFR below 1,000 ft or 3 sm, MVFR at or below 3,000 ft or 5 sm, VFR above both. A ceiling is the lowest broken, overcast or obscured layer — few and scattered layers never make a ceiling.',
+    a: 'From the worse of ceiling and prevailing visibility, using the FAA thresholds: LIFR below 500 ft or 1 sm, IFR below 1,000 ft or 3 sm, MVFR at or below 3,000 ft or 5 sm, VFR above both. A ceiling is the lowest broken, overcast or obscured layer; few and scattered layers never make a ceiling.',
   },
   {
     q: 'What is measured, and what is derived?',
@@ -343,17 +343,17 @@ const faqItems = [
   },
   {
     q: 'Why does the crosswind not match what the tower says?',
-    a: "Wind direction in a METAR is referenced to true north. Runway numbers are magnetic. The crosswind figure ignores magnetic variation, so at fields with large variation treat it as close rather than exact — the tower's spoken wind is already magnetic and will differ.",
+    a: "Wind direction in a METAR is referenced to true north. Runway numbers are magnetic. The crosswind figure ignores magnetic variation, so at fields with large variation treat it as close rather than exact; the tower's spoken wind is already magnetic and will differ.",
   },
   {
     q: 'What does it mean when a value is flagged as unrealistic?',
-    a: 'Some flagged conditions above are sanity checks on the report itself, not on the weather — a dew point above temperature, a wind gust no higher than the sustained speed, or a value outside anything a surface station has ever recorded. Those point at a likely transcription or sensor error in the source feed, not at conditions to plan around.',
+    a: 'Some flagged conditions above are sanity checks on the report itself, not on the weather: a dew point above temperature, a wind gust no higher than the sustained speed, or a value outside anything a surface station has ever recorded. Those point at a likely transcription or sensor error in the source feed, not at conditions to plan around.',
   },
   {
     q: 'Where does this come from, and how fresh is it?',
     a: fetchedAt
-      ? `Observations and forecasts come from the NOAA Aviation Weather Center feed, cached for a few minutes. Retrieved ${new Date(fetchedAt).toISOString().replace('T', ' ').slice(0, 16)}Z. This is a decoding tool for study and planning, not a weather briefing — nothing here substitutes for an official source before a flight.`
-      : 'Observations and forecasts come from the NOAA Aviation Weather Center feed, cached for a few minutes. This is a decoding tool for study and planning, not a weather briefing — nothing here substitutes for an official source before a flight.',
+      ? `Observations and forecasts come from the NOAA Aviation Weather Center feed, cached for a few minutes. Retrieved ${new Date(fetchedAt).toISOString().replace('T', ' ').slice(0, 16)}Z. This is a decoding tool for study and planning, not a weather briefing; nothing here substitutes for an official source before a flight.`
+      : 'Observations and forecasts come from the NOAA Aviation Weather Center feed, cached for a few minutes. This is a decoding tool for study and planning, not a weather briefing; nothing here substitutes for an official source before a flight.',
   },
 ];
 ---
@@ -421,7 +421,7 @@ const faqItems = [
       data-runway={defaultRunway}
     >
       <header class="wx-panel-head">
-        <span class="col">01 — Wind</span>
+        <span class="col">01 - Wind</span>
         <span class="wx-panel-note">Directions are true north, as reported</span>
       </header>
 
@@ -455,7 +455,7 @@ const faqItems = [
 
         <circle cx={CX} cy={CY} r="30" class="dial-hub" />
         <text x={CX} y={CY + 2} class="dial-hub-value serif" text-anchor="middle">
-          {report.wind ? (report.wind.calm ? '0' : String(report.wind.speedKt ?? '—')) : '—'}
+          {report.wind ? (report.wind.calm ? '0' : String(report.wind.speedKt ?? '-')) : '-'}
         </text>
         <text x={CX} y={CY + 16} class="dial-hub-unit" text-anchor="middle">
           {report.wind?.gustKt != null ? `G${report.wind.gustKt} KT` : 'KT'}
@@ -478,7 +478,7 @@ const faqItems = [
           <dt class="col">Headwind</dt>
           <dd>
             <span class="wx-component-value num" data-headwind-value>
-              {components ? `${Math.abs(components.headwindKt).toFixed(1)} kt` : '—'}
+              {components ? `${Math.abs(components.headwindKt).toFixed(1)} kt` : '-'}
             </span>
             <span class="wx-component-note" data-headwind-note>
               {components ? (components.headwindKt >= 0 ? 'on the nose' : 'tailwind') : 'needs a steady direction'}
@@ -490,7 +490,7 @@ const faqItems = [
           <dt class="col">Crosswind</dt>
           <dd>
             <span class="wx-component-value num" data-crosswind-value>
-              {components ? `${components.crosswindKt.toFixed(1)} kt` : '—'}
+              {components ? `${components.crosswindKt.toFixed(1)} kt` : '-'}
             </span>
             <span class="wx-component-note" data-crosswind-note>
               {components ? (components.from === 'none' ? 'aligned' : `from the ${components.from}`) : 'needs a steady direction'}
@@ -503,7 +503,7 @@ const faqItems = [
             <dt class="col">In the gust</dt>
             <dd>
               <span class="wx-component-value num" data-gust-value>
-                {components?.gustCrosswindKt != null ? `${components.gustCrosswindKt.toFixed(1)} kt crosswind` : '—'}
+                {components?.gustCrosswindKt != null ? `${components.gustCrosswindKt.toFixed(1)} kt crosswind` : '-'}
               </span>
               <span class="wx-component-note">peak component at {report.wind.gustKt} kt</span>
             </dd>
@@ -516,7 +516,7 @@ const faqItems = [
 
     <div class="wx-panel">
       <header class="wx-panel-head">
-        <span class="col">02 — Sky</span>
+        <span class="col">02 - Sky</span>
         <span class="wx-panel-note">Coverage shown in eighths, as reported</span>
       </header>
 
@@ -565,7 +565,7 @@ const faqItems = [
 
         {clearSky && (
           <text x={(SKY_LEFT + SKY_RIGHT) / 2} y={skyY(maxAlt / 2)} class="sky-empty" text-anchor="middle">
-            {report.cavok ? 'CAVOK — no cloud below 5,000 ft' : 'No cloud layers reported'}
+            {report.cavok ? 'CAVOK - no cloud below 5,000 ft' : 'No cloud layers reported'}
           </text>
         )}
 
@@ -579,7 +579,7 @@ const faqItems = [
 
     <div class="wx-panel">
       <header class="wx-panel-head">
-        <span class="col">03 — Air</span>
+        <span class="col">03 - Air</span>
         <span class="wx-panel-note">Performance figures are standard approximations</span>
       </header>
 
@@ -629,10 +629,10 @@ const faqItems = [
       )}
 
       <dl class="wx-facts">
-        <div><dt>Relative humidity</dt><dd class="num">{humidity != null ? `${Math.round(humidity)}%` : '—'}</dd></div>
-        <div><dt>Temperature / dew point spread</dt><dd class="num">{spread != null ? `${(Math.round(spread * 10) / 10).toFixed(1)} °C` : '—'}</dd></div>
-        <div><dt>Estimated cloud base</dt><dd class="num">{estimatedBase != null ? `${fmtInt(estimatedBase)} ft AGL` : '—'}</dd></div>
-        <div><dt>Altimeter</dt><dd class="num">{report.altimeterInHg != null ? `${report.altimeterInHg.toFixed(2)} inHg · ${report.altimeterHpa!.toFixed(0)} hPa` : '—'}</dd></div>
+        <div><dt>Relative humidity</dt><dd class="num">{humidity != null ? `${Math.round(humidity)}%` : '-'}</dd></div>
+        <div><dt>Temperature / dew point spread</dt><dd class="num">{spread != null ? `${(Math.round(spread * 10) / 10).toFixed(1)} °C` : '-'}</dd></div>
+        <div><dt>Estimated cloud base</dt><dd class="num">{estimatedBase != null ? `${fmtInt(estimatedBase)} ft AGL` : '-'}</dd></div>
+        <div><dt>Altimeter</dt><dd class="num">{report.altimeterInHg != null ? `${report.altimeterInHg.toFixed(2)} inHg · ${report.altimeterHpa!.toFixed(0)} hPa` : '-'}</dd></div>
         {report.seaLevelPressureHpa != null && (
           <div><dt>Sea-level pressure</dt><dd class="num">{report.seaLevelPressureHpa.toFixed(1)} hPa</dd></div>
         )}
@@ -643,7 +643,7 @@ const faqItems = [
 
   <section class="wx-visibility">
     <header class="wx-panel-head">
-      <span class="col">04 — Visibility and present weather</span>
+      <span class="col">04 - Visibility and present weather</span>
       <span class="wx-panel-note">Bands show the category prevailing visibility alone would give</span>
     </header>
 
@@ -698,7 +698,7 @@ const faqItems = [
 
   <section class="wx-raw" id="wx-raw">
     <header class="wx-panel-head">
-      <span class="col">05 — Group by group</span>
+      <span class="col">05 - Group by group</span>
       <span class="wx-panel-note">Hover or focus any group to tie it to its meaning</span>
     </header>
 
@@ -740,7 +740,7 @@ const faqItems = [
   {taf ? (
     <section class="wx-taf">
       <header class="wx-panel-head">
-        <span class="col">06 — Terminal aerodrome forecast</span>
+        <span class="col">06 - Terminal aerodrome forecast</span>
         <span class="wx-panel-note">
           {taf.issued ? `Issued ${pad2(taf.issued.day)} at ${pad2(taf.issued.hour)}:${pad2(taf.issued.minute)}Z` : 'Issue time not stated'}
           {taf.amended ? ' · amended' : ''}
@@ -763,7 +763,7 @@ const faqItems = [
                   <span
                     class={`wx-block cat-${block.category.toLowerCase()}`}
                     style={`left:${block.leftPct}%;width:${block.widthPct}%`}
-                    title={`${block.label} — ${block.summary}`}
+                    title={`${block.label} · ${block.summary}`}
                   >
                     <span class="wx-block-label num">{block.label}</span>
                   </span>
@@ -780,7 +780,7 @@ const faqItems = [
                     <span
                       class={`wx-block wx-block-temp cat-${block.category.toLowerCase()}`}
                       style={`left:${block.leftPct}%;width:${block.widthPct}%`}
-                      title={`${block.label} — ${block.summary}`}
+                      title={`${block.label} · ${block.summary}`}
                     >
                       <span class="wx-block-label num">{block.label}</span>
                     </span>
@@ -812,7 +812,7 @@ const faqItems = [
                 <span class={`wx-period-cat cat-${cat.toLowerCase()}`}>{cat}</span>
                 <span class="wx-period-kind">{period.kind === 'INITIAL' ? 'Initial conditions' : period.kindLabel}</span>
                 <span class="wx-period-time num">
-                  {period.from ? `${pad2(period.from.day)} ${pad2(period.from.hour)}:${pad2(period.from.minute)}Z` : '—'}
+                  {period.from ? `${pad2(period.from.day)} ${pad2(period.from.hour)}:${pad2(period.from.minute)}Z` : '-'}
                   {period.to ? ` → ${pad2(period.to.day)} ${pad2(period.to.hour)}:${pad2(period.to.minute)}Z` : ''}
                 </span>
               </header>
@@ -860,18 +860,18 @@ const faqItems = [
   ) : (
     <section class="wx-taf">
       <header class="wx-panel-head">
-        <span class="col">06 — Terminal aerodrome forecast</span>
+        <span class="col">06 - Terminal aerodrome forecast</span>
       </header>
       <p class="wx-empty">
         No TAF is available for this station. Forecasts are issued only for aerodromes with a
-        forecast responsibility — most smaller fields report a METAR but never a TAF.
+        forecast responsibility: most smaller fields report a METAR but never a TAF.
       </p>
     </section>
   )}
 
   <section class="wx-notes">
     <header class="wx-panel-head">
-      <span class="col">07 — How to read this</span>
+      <span class="col">07 - How to read this</span>
       <span class="wx-panel-note">Frequently asked</span>
     </header>
     <div class="wx-faq">

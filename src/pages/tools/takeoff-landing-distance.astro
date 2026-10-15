@@ -59,8 +59,8 @@ const rollLabel = phase === 'takeoff' ? 'ground roll' : 'landing roll';
 ---
 
 <Layout
-  title={`${phaseLabel} Distance Calculator — aviation.foundation`}
-  description="Derive takeoff or landing distance from your own POH baseline through a visible correction chain — weight, density altitude, wind, surface and slope, each shown as its own step. Free, no account, no advertising."
+  title={`${phaseLabel} Distance Calculator · aviation.foundation`}
+  description="Derive takeoff or landing distance from your own POH baseline through a visible correction chain - weight, density altitude, wind, surface and slope, each shown as its own step. Free, no account, no advertising."
   currentPath="/tools/takeoff-landing-distance"
 >
   <div class="page-container container-site px-site">
@@ -68,7 +68,7 @@ const rollLabel = phase === 'takeoff' ? 'ground roll' : 'landing roll';
       <div class="eyebrow">Flight planning tool</div>
       <h1 class="serif page-title">Takeoff &amp; Landing Distance</h1>
       <p class="page-lead">
-        No chart is built in — every POH's numbers belong to that airframe. Enter the baseline your
+        No chart is built in - every POH's numbers belong to that airframe. Enter the baseline your
         own chart already gives you at sea level and standard conditions, and this walks it through
         the correction chain a POH's notes describe in words: weight, density altitude, wind,
         surface, slope. Each step shows its multiplier, so the total is something you can retrace by
@@ -90,7 +90,7 @@ const rollLabel = phase === 'takeoff' ? 'ground roll' : 'landing roll';
         </div>
 
         <div class="tld-fieldset">
-          <div class="col">Your POH baseline — sea level, standard day, no wind, paved level runway</div>
+          <div class="col">Your POH baseline - sea level, standard day, no wind, paved level runway</div>
           <div class="tld-grid">
             <div class="tld-field">
               <label class="col" for="tld-bd">Ground roll</label>
@@ -149,22 +149,22 @@ const rollLabel = phase === 'takeoff' ? 'ground roll' : 'landing roll';
         <div data-tld-result-body hidden={!result}>
           <div class="tld-headline">
             <div class="col" data-tld-headline-label>{phaseLabel} {rollLabel}</div>
-            <div class="tld-headline-value serif num" data-tld-final>{result ? Math.round(result.finalFt).toLocaleString('en-US') : '—'}</div>
+            <div class="tld-headline-value serif num" data-tld-final>{result ? Math.round(result.finalFt).toLocaleString('en-US') : '-'}</div>
             <div class="tld-headline-unit">ft, all corrections applied</div>
           </div>
 
           <div class="tld-substat" data-tld-obstacle-row hidden={!obstacleResult}>
             <span class="col">Over a 50 ft obstacle</span>
-            <span class="num" data-tld-obstacle>{obstacleResult ? Math.round(obstacleResult.finalFt).toLocaleString('en-US') + ' ft' : '—'}</span>
+            <span class="num" data-tld-obstacle>{obstacleResult ? Math.round(obstacleResult.finalFt).toLocaleString('en-US') + ' ft' : '-'}</span>
           </div>
 
           <div class="tld-substat">
             <span class="col">Total correction</span>
-            <span class="num" data-tld-total-factor>{result ? `×${result.totalFactor.toFixed(2)}` : '—'}</span>
+            <span class="num" data-tld-total-factor>{result ? `×${result.totalFactor.toFixed(2)}` : '-'}</span>
           </div>
 
           <p class="tld-margin-note">
-            Add your own margin on top of this before comparing it to the runway available — most
+            Add your own margin on top of this before comparing it to the runway available - most
             training guidance suggests at least 1.5× the calculated distance for a paved runway,
             more for anything short, contaminated, or unfamiliar.
           </p>
@@ -200,15 +200,15 @@ const rollLabel = phase === 'takeoff' ? 'ground roll' : 'landing roll';
       <div class="tld-faq">
         <details class="tld-faq-item" open>
           <summary><span>Why not just enter the tail number and get an answer?</span><span class="tld-faq-icon" aria-hidden="true"></span></summary>
-          <p>Every manufacturer's performance chart is copyrighted and specific to one airframe, engine and prop combination — sometimes to individual serial number ranges. Reproducing one here would mean either paying to license every chart in service or silently guessing, and a wrong guess on takeoff distance is not a place to guess. You supply your own chart's baseline row; this tool owns the correction arithmetic, which is public-domain aviation knowledge.</p>
+          <p>Every manufacturer's performance chart is copyrighted and specific to one airframe, engine and prop combination - sometimes to individual serial number ranges. Reproducing one here would mean either paying to license every chart in service or silently guessing, and a wrong guess on takeoff distance is not a place to guess. You supply your own chart's baseline row; this tool owns the correction arithmetic, which is public-domain aviation knowledge.</p>
         </details>
         <details class="tld-faq-item">
           <summary><span>How accurate is the weight-squared rule?</span><span class="tld-faq-icon" aria-hidden="true"></span></summary>
-          <p>It is the approximation taught in the FAA's Pilot's Handbook of Aeronautical Knowledge, and it holds reasonably well within about ±20% of a chart's baseline weight. Outside that range, real POH charts curve more than a pure square law — if your baseline weight and actual weight are far apart, prefer reading two points off your actual chart and interpolating between them instead.</p>
+          <p>It is the approximation taught in the FAA's Pilot's Handbook of Aeronautical Knowledge, and it holds reasonably well within about ±20% of a chart's baseline weight. Outside that range, real POH charts curve more than a pure square law - if your baseline weight and actual weight are far apart, prefer reading two points off your actual chart and interpolating between them instead.</p>
         </details>
         <details class="tld-faq-item">
           <summary><span>Where do the wind, surface and slope numbers come from?</span><span class="tld-faq-icon" aria-hidden="true"></span></summary>
-          <p>The wind rule (10% per 9 kt headwind, 10% per 2 kt tailwind) is the FAA's own published rule of thumb. Surface and slope factors are generic figures used widely in flight training material and in FAA Advisory Circular 91-79A on runway overrun prevention — treat them as a sanity check, not as your aircraft's certified number. When your POH has its own wind, surface or slope correction, use that instead.</p>
+          <p>The wind rule (10% per 9 kt headwind, 10% per 2 kt tailwind) is the FAA's own published rule of thumb. Surface and slope factors are generic figures used widely in flight training material and in FAA Advisory Circular 91-79A on runway overrun prevention - treat them as a sanity check, not as your aircraft's certified number. When your POH has its own wind, surface or slope correction, use that instead.</p>
         </details>
       </div>
     </section>

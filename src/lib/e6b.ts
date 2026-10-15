@@ -147,7 +147,7 @@ export function timeFuelDistance(input: TfdInput): TfdResult {
 }
 
 export function formatHm(minutes: number | null): string {
-  if (minutes == null || !Number.isFinite(minutes) || minutes < 0) return '—';
+  if (minutes == null || !Number.isFinite(minutes) || minutes < 0) return '-';
   const totalMin = Math.round(minutes);
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;

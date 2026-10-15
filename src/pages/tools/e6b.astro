@@ -30,7 +30,7 @@ let wind: WindTriangleResult | null = null;
 let windError: string | null = null;
 if (tc != null && tas != null && wd != null && ws != null) {
   wind = windTriangle({ trueCourseDeg: tc, tasKt: tas, windFromDeg: wd, windSpeedKt: ws });
-  if (!wind) windError = 'That wind is stronger than your airspeed on the beam — no heading holds this course.';
+  if (!wind) windError = 'That wind is stronger than your airspeed on the beam - no heading holds this course.';
 }
 
 const cas = num('cas');
@@ -78,7 +78,7 @@ const cardinals = [
 ---
 
 <Layout
-  title="E6B Flight Computer — aviation.foundation"
+  title="E6B Flight Computer · aviation.foundation"
   description="Wind correction angle, groundspeed and true heading; true airspeed from calibrated airspeed and density altitude; time, fuel and distance solved from any two of the three. Free, no account, no advertising."
   currentPath="/tools/e6b"
 >
@@ -97,7 +97,7 @@ const cardinals = [
 
     <section class="e6b-panel" id="e6b-wind">
       <header class="e6b-panel-head">
-        <span class="col">01 — Wind triangle</span>
+        <span class="col">01 - Wind triangle</span>
         <span class="e6b-panel-note">Heading, wind correction angle and groundspeed for one leg</span>
       </header>
 
@@ -148,9 +148,9 @@ const cardinals = [
             <circle cx={CX} cy={CY} r="4" class="dial-hub" />
           </svg>
           <ul class="e6b-legend">
-            <li><i class="key course"></i>Course{tc != null ? ` — ${pad3(tc)}°` : ''}</li>
-            <li><i class="key wind"></i>Wind{wd != null && ws != null ? ` — ${pad3(wd)}° at ${ws} kt` : ''}</li>
-            <li><i class="key heading"></i>Heading{wind ? ` — ${pad3(wind.headingDeg)}°` : ''}</li>
+            <li><i class="key course"></i>Course{tc != null ? ` - ${pad3(tc)}°` : ''}</li>
+            <li><i class="key wind"></i>Wind{wd != null && ws != null ? ` - ${pad3(wd)}° at ${ws} kt` : ''}</li>
+            <li><i class="key heading"></i>Heading{wind ? ` - ${pad3(wind.headingDeg)}°` : ''}</li>
           </ul>
         </div>
 
@@ -194,7 +194,7 @@ const cardinals = [
 
     <section class="e6b-panel" id="e6b-tas-panel">
       <header class="e6b-panel-head">
-        <span class="col">02 — True airspeed</span>
+        <span class="col">02 - True airspeed</span>
         <span class="e6b-panel-note">From calibrated airspeed, pressure altitude and outside air temperature</span>
       </header>
 
@@ -239,7 +239,7 @@ const cardinals = [
                 Air this thin and <span data-out="isa2">{Math.abs(tasCalc.isaDevC).toFixed(1)}°C {tasCalc.isaDevC >= 0 ? 'warmer' : 'cooler'} than
                 standard</span> has a density ratio (σ) of <span data-out="sigma">{tasCalc.densityRatio.toFixed(3)}</span> against
                 sea level. The airspeed indicator reads dynamic pressure, not speed through the air, so true airspeed is
-                calibrated airspeed divided by √σ — <span data-out="tas2">{Math.round(tasCalc.tasKt)}</span> kt for
+                calibrated airspeed divided by √σ - <span data-out="tas2">{Math.round(tasCalc.tasKt)}</span> kt for
                 <span data-out="cas2"> {cas}</span> kt indicated.
               </p>
               <a class="e6b-link" data-e6b-use-tas href="#e6b-wind">Use this true airspeed in the wind triangle above ↑</a>
@@ -252,8 +252,8 @@ const cardinals = [
 
     <section class="e6b-panel" id="e6b-tfd">
       <header class="e6b-panel-head">
-        <span class="col">03 — Time, fuel, distance</span>
-        <span class="e6b-panel-note">Enter any two of distance, groundspeed and time — the third fills in</span>
+        <span class="col">03 - Time, fuel, distance</span>
+        <span class="e6b-panel-note">Enter any two of distance, groundspeed and time - the third fills in</span>
       </header>
 
       <div class="e6b-body e6b-body-narrow">
@@ -287,12 +287,12 @@ const cardinals = [
               <div class="e6b-stat-band">
                 <div class="e6b-stat">
                   <div class="col">Distance</div>
-                  <div class="e6b-stat-value serif num" data-out="dist">{tfd.distanceNm != null ? Math.round(tfd.distanceNm * 10) / 10 : '—'}</div>
+                  <div class="e6b-stat-value serif num" data-out="dist">{tfd.distanceNm != null ? Math.round(tfd.distanceNm * 10) / 10 : '-'}</div>
                   <div class="e6b-stat-unit">nm</div>
                 </div>
                 <div class="e6b-stat">
                   <div class="col">Groundspeed</div>
-                  <div class="e6b-stat-value serif num" data-out="gs">{tfd.groundSpeedKt != null ? Math.round(tfd.groundSpeedKt) : '—'}</div>
+                  <div class="e6b-stat-value serif num" data-out="gs">{tfd.groundSpeedKt != null ? Math.round(tfd.groundSpeedKt) : '-'}</div>
                   <div class="e6b-stat-unit">kt</div>
                 </div>
                 <div class="e6b-stat">
@@ -329,19 +329,19 @@ const cardinals = [
       <div class="e6b-faq">
         <details class="e6b-faq-item" open>
           <summary><span>Where does the wind correction angle come from?</span><span class="e6b-faq-icon" aria-hidden="true"></span></summary>
-          <p>From the law of sines on the wind triangle: the crosswind component divided by true airspeed gives the sine of the correction angle. It is exact for the geometry, not an approximation — the only imprecision is whatever error is in the wind and airspeed you fed in.</p>
+          <p>From the law of sines on the wind triangle: the crosswind component divided by true airspeed gives the sine of the correction angle. It is exact for the geometry, not an approximation - the only imprecision is whatever error is in the wind and airspeed you fed in.</p>
         </details>
         <details class="e6b-faq-item">
           <summary><span>Why is true airspeed higher than calibrated airspeed up high?</span><span class="e6b-faq-icon" aria-hidden="true"></span></summary>
-          <p>The airspeed indicator measures dynamic pressure, which thins out with the air. At altitude the same dynamic pressure — the same indicated reading — corresponds to the aircraft moving faster through the thinner air. The correction is the inverse square root of the density ratio, σ.</p>
+          <p>The airspeed indicator measures dynamic pressure, which thins out with the air. At altitude the same dynamic pressure - the same indicated reading - corresponds to the aircraft moving faster through the thinner air. The correction is the inverse square root of the density ratio, σ.</p>
         </details>
         <details class="e6b-faq-item">
           <summary><span>Is this compressible or incompressible airspeed?</span><span class="e6b-faq-icon" aria-hidden="true"></span></summary>
-          <p>Incompressible — the same relation a mechanical E6B's slide rule side encodes. Below about 200 knots and 10,000 feet the compressibility correction is under a knot or two; this tool does not apply it, the same way the aluminum wheel never did.</p>
+          <p>Incompressible - the same relation a mechanical E6B's slide rule side encodes. Below about 200 knots and 10,000 feet the compressibility correction is under a knot or two; this tool does not apply it, the same way the aluminum wheel never did.</p>
         </details>
         <details class="e6b-faq-item">
           <summary><span>What does this tool not do?</span><span class="e6b-faq-icon" aria-hidden="true"></span></summary>
-          <p>It does not know your aircraft's performance, does not account for magnetic variation between true and magnetic heading, and does not replace a real wind aloft forecast. It solves the triangle you give it — the numbers going in are on you.</p>
+          <p>It does not know your aircraft's performance, does not account for magnetic variation between true and magnetic heading, and does not replace a real wind aloft forecast. It solves the triangle you give it - the numbers going in are on you.</p>
         </details>
       </div>
     </section>
@@ -545,8 +545,8 @@ const cardinals = [
       if (distanceNm == null && groundSpeedKt == null && timeMin == null) return;
 
       const result = timeFuelDistance({ distanceNm, groundSpeedKt, timeMin, fuelBurnGph, fuelOnBoardGal });
-      setText(tfdResults, 'dist', result.distanceNm != null ? String(Math.round(result.distanceNm * 10) / 10) : '—');
-      setText(tfdResults, 'gs', result.groundSpeedKt != null ? String(Math.round(result.groundSpeedKt)) : '—');
+      setText(tfdResults, 'dist', result.distanceNm != null ? String(Math.round(result.distanceNm * 10) / 10) : '-');
+      setText(tfdResults, 'gs', result.groundSpeedKt != null ? String(Math.round(result.groundSpeedKt)) : '-');
       setText(tfdResults, 'time', formatHm(result.timeMin));
       if (result.fuelUsedGal != null) setText(tfdResults, 'fuel-used', `${result.fuelUsedGal.toFixed(1)} gal`);
       if (result.fuelRemainingGal != null) setText(tfdResults, 'fuel-rem', `${result.fuelRemainingGal.toFixed(1)} gal`);

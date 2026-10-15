@@ -91,7 +91,7 @@ const overallOk = cgStatus !== false && !limits.overGross;
 ---
 
 <Layout
-  title="Weight & Balance Worksheet — aviation.foundation"
+  title="Weight & Balance Worksheet · aviation.foundation"
   description="Aircraft-agnostic weight and balance: load your own empty weight, stations and POH limits, and see total weight, moment, CG and whether the loading falls inside your envelope. Free, no account, no advertising."
   currentPath="/tools/weight-balance"
 >
@@ -100,7 +100,7 @@ const overallOk = cgStatus !== false && !limits.overGross;
       <div class="eyebrow">Flight planning tool</div>
       <h1 class="serif page-title">Weight &amp; Balance Worksheet</h1>
       <p class="page-lead">
-        No aircraft is built in — every real chart belongs to a specific POH. Load your own empty
+        No aircraft is built in - every real chart belongs to a specific POH. Load your own empty
         weight and arm, add the stations your aircraft has, and, if you want the result checked,
         your own forward/aft limits or a full envelope polygon. The moments, the sum, and the CG
         are the one part that's identical from a Cub to a King Air.
@@ -115,7 +115,7 @@ const overallOk = cgStatus !== false && !limits.overGross;
             <div class="wb-cell wb-cell-name"><span class="wb-cell-label">Item</span><span class="wb-static">Empty aircraft</span></div>
             <div class="wb-cell"><label class="wb-cell-label" for="wb-ew">Weight (lb)</label><input type="number" id="wb-ew" name="ew" class="wb-input num" step="0.1" min="0" value={emptyWeightLb ?? ''} data-wb-input /></div>
             <div class="wb-cell"><label class="wb-cell-label" for="wb-ea">Arm (in)</label><input type="number" id="wb-ea" name="ea" class="wb-input num" step="0.01" value={emptyArmIn ?? ''} data-wb-input /></div>
-            <div class="wb-cell wb-cell-moment"><span class="wb-cell-label">Moment</span><span class="num wb-moment" data-wb-moment="0">{result.rows[0]?.momentInLb != null ? Math.round(result.rows[0].momentInLb).toLocaleString('en-US') : '—'}</span></div>
+            <div class="wb-cell wb-cell-moment"><span class="wb-cell-label">Moment</span><span class="num wb-moment" data-wb-moment="0">{result.rows[0]?.momentInLb != null ? Math.round(result.rows[0].momentInLb).toLocaleString('en-US') : '-'}</span></div>
           </div>
         </div>
 
@@ -134,7 +134,7 @@ const overallOk = cgStatus !== false && !limits.overGross;
               <div class="wb-cell"><span class="wb-cell-label">Arm (in)</span><input type="number" name={`s${i + 1}a`} class="wb-input num" step="0.01" value={station.armIn ?? ''} data-wb-input /></div>
               <div class="wb-cell wb-cell-moment">
                 <span class="wb-cell-label">Moment</span>
-                <span class="num wb-moment" data-wb-moment={i + 1}>{result.rows[i + 1]?.momentInLb != null ? Math.round(result.rows[i + 1].momentInLb!).toLocaleString('en-US') : '—'}</span>
+                <span class="num wb-moment" data-wb-moment={i + 1}>{result.rows[i + 1]?.momentInLb != null ? Math.round(result.rows[i + 1].momentInLb!).toLocaleString('en-US') : '-'}</span>
                 <button type="button" class="wb-remove" data-wb-remove={i + 1} aria-label="Remove station" hidden={i + 1 <= 3}>×</button>
               </div>
             </div>
@@ -158,7 +158,7 @@ const overallOk = cgStatus !== false && !limits.overGross;
             </div>
           </div>
           <div class="wb-field wb-field-envelope">
-            <label class="col" for="wb-env">Full envelope (optional) — one <code>arm,weight</code> point per line, tracing the polygon in order</label>
+            <label class="col" for="wb-env">Full envelope (optional) - one <code>arm,weight</code> point per line, tracing the polygon in order</label>
             <textarea id="wb-env" name="env" class="wb-textarea num" rows="4" spellcheck="false" placeholder={'35.0,1500\n38.5,1500\n47.3,1950\n35.0,1950'} data-wb-input>{envelopeText}</textarea>
             <p class="wb-help">When a full envelope is given it overrides the simple forward/aft check above, since a real envelope's limits usually move with weight.</p>
           </div>
@@ -171,17 +171,17 @@ const overallOk = cgStatus !== false && !limits.overGross;
         <div class="wb-stat-band">
           <div class="wb-stat">
             <div class="col">Total weight</div>
-            <div class="wb-stat-value serif num" data-wb-total-weight>{hasAnyInput ? Math.round(result.totalWeightLb).toLocaleString('en-US') : '—'}</div>
+            <div class="wb-stat-value serif num" data-wb-total-weight>{hasAnyInput ? Math.round(result.totalWeightLb).toLocaleString('en-US') : '-'}</div>
             <div class="wb-stat-unit">lb</div>
           </div>
           <div class="wb-stat">
             <div class="col">Total moment</div>
-            <div class="wb-stat-value serif num" data-wb-total-moment>{hasAnyInput ? Math.round(result.totalMomentInLb).toLocaleString('en-US') : '—'}</div>
+            <div class="wb-stat-value serif num" data-wb-total-moment>{hasAnyInput ? Math.round(result.totalMomentInLb).toLocaleString('en-US') : '-'}</div>
             <div class="wb-stat-unit">lb-in</div>
           </div>
           <div class="wb-stat">
             <div class="col">Center of gravity</div>
-            <div class="wb-stat-value serif num" data-wb-cg>{result.cgIn != null ? result.cgIn.toFixed(2) : '—'}</div>
+            <div class="wb-stat-value serif num" data-wb-cg>{result.cgIn != null ? result.cgIn.toFixed(2) : '-'}</div>
             <div class="wb-stat-unit">in aft of datum</div>
           </div>
         </div>
@@ -263,16 +263,16 @@ const overallOk = cgStatus !== false && !limits.overGross;
             {result.rows.map((row) => (
               <tr class={row.weightLb == null ? 'is-empty' : ''}>
                 <td>{row.name}</td>
-                <td class="num">{row.weightLb != null ? row.weightLb.toLocaleString('en-US') : '—'}</td>
-                <td class="num">{row.armIn != null ? row.armIn.toFixed(2) : '—'}</td>
-                <td class="num">{row.momentInLb != null ? Math.round(row.momentInLb).toLocaleString('en-US') : '—'}</td>
+                <td class="num">{row.weightLb != null ? row.weightLb.toLocaleString('en-US') : '-'}</td>
+                <td class="num">{row.armIn != null ? row.armIn.toFixed(2) : '-'}</td>
+                <td class="num">{row.momentInLb != null ? Math.round(row.momentInLb).toLocaleString('en-US') : '-'}</td>
               </tr>
             ))}
             <tr class="wb-table-total">
               <td>Total</td>
-              <td class="num" data-wb-table-weight>{hasAnyInput ? Math.round(result.totalWeightLb).toLocaleString('en-US') : '—'}</td>
-              <td class="num">CG {result.cgIn != null ? result.cgIn.toFixed(2) : '—'}</td>
-              <td class="num" data-wb-table-moment>{hasAnyInput ? Math.round(result.totalMomentInLb).toLocaleString('en-US') : '—'}</td>
+              <td class="num" data-wb-table-weight>{hasAnyInput ? Math.round(result.totalWeightLb).toLocaleString('en-US') : '-'}</td>
+              <td class="num">CG {result.cgIn != null ? result.cgIn.toFixed(2) : '-'}</td>
+              <td class="num" data-wb-table-moment>{hasAnyInput ? Math.round(result.totalMomentInLb).toLocaleString('en-US') : '-'}</td>
             </tr>
           </tbody>
         </table>
@@ -288,11 +288,11 @@ const overallOk = cgStatus !== false && !limits.overGross;
         </details>
         <details class="wb-faq-item">
           <summary><span>What is a moment, exactly?</span><span class="wb-faq-icon" aria-hidden="true"></span></summary>
-          <p>Weight times arm — the turning effect that weight has around the datum, the same way torque is force times distance. Add every station's moment, add every station's weight, and the CG is the moment total divided by the weight total: the balance point of the whole loaded aircraft.</p>
+          <p>Weight times arm - the turning effect that weight has around the datum, the same way torque is force times distance. Add every station's moment, add every station's weight, and the CG is the moment total divided by the weight total: the balance point of the whole loaded aircraft.</p>
         </details>
         <details class="wb-faq-item">
-          <summary><span>Simple limits versus a full envelope — which should I use?</span><span class="wb-faq-icon" aria-hidden="true"></span></summary>
-          <p>A single forward and aft limit is correct only if your POH's envelope is a plain rectangle — true for some trainers, false for many aircraft where the aft limit moves inward as weight drops. If your POH shows a sloped or multi-sided envelope, trace its corners into the polygon field instead; the simple limits are ignored once a polygon is present.</p>
+          <summary><span>Simple limits versus a full envelope - which should I use?</span><span class="wb-faq-icon" aria-hidden="true"></span></summary>
+          <p>A single forward and aft limit is correct only if your POH's envelope is a plain rectangle - true for some trainers, false for many aircraft where the aft limit moves inward as weight drops. If your POH shows a sloped or multi-sided envelope, trace its corners into the polygon field instead; the simple limits are ignored once a polygon is present.</p>
         </details>
       </div>
     </section>
@@ -462,19 +462,19 @@ const overallOk = cgStatus !== false && !limits.overGross;
       const totalWeightEl = document.querySelector<HTMLElement>('[data-wb-total-weight]');
       const totalMomentEl = document.querySelector<HTMLElement>('[data-wb-total-moment]');
       const cgEl = document.querySelector<HTMLElement>('[data-wb-cg]');
-      if (totalWeightEl) totalWeightEl.textContent = hasAnyInput ? Math.round(result.totalWeightLb).toLocaleString('en-US') : '—';
-      if (totalMomentEl) totalMomentEl.textContent = hasAnyInput ? Math.round(result.totalMomentInLb).toLocaleString('en-US') : '—';
-      if (cgEl) cgEl.textContent = result.cgIn != null ? result.cgIn.toFixed(2) : '—';
+      if (totalWeightEl) totalWeightEl.textContent = hasAnyInput ? Math.round(result.totalWeightLb).toLocaleString('en-US') : '-';
+      if (totalMomentEl) totalMomentEl.textContent = hasAnyInput ? Math.round(result.totalMomentInLb).toLocaleString('en-US') : '-';
+      if (cgEl) cgEl.textContent = result.cgIn != null ? result.cgIn.toFixed(2) : '-';
 
       result.rows.forEach((row, i) => {
         const momentEl = document.querySelector<HTMLElement>(`[data-wb-moment="${i}"]`);
-        if (momentEl) momentEl.textContent = row.momentInLb != null ? Math.round(row.momentInLb).toLocaleString('en-US') : '—';
+        if (momentEl) momentEl.textContent = row.momentInLb != null ? Math.round(row.momentInLb).toLocaleString('en-US') : '-';
       });
 
       const tableWeight = document.querySelector<HTMLElement>('[data-wb-table-weight]');
       const tableMoment = document.querySelector<HTMLElement>('[data-wb-table-moment]');
-      if (tableWeight) tableWeight.textContent = hasAnyInput ? Math.round(result.totalWeightLb).toLocaleString('en-US') : '—';
-      if (tableMoment) tableMoment.textContent = hasAnyInput ? Math.round(result.totalMomentInLb).toLocaleString('en-US') : '—';
+      if (tableWeight) tableWeight.textContent = hasAnyInput ? Math.round(result.totalWeightLb).toLocaleString('en-US') : '-';
+      if (tableMoment) tableMoment.textContent = hasAnyInput ? Math.round(result.totalMomentInLb).toLocaleString('en-US') : '-';
 
       const maxGrossLb = num('mg');
       const fwdLimitIn = num('fl');

@@ -35,14 +35,14 @@ const EVENT_LABELS: Record<string, string> = {
 };
 
 function fmtDate(d: string | null): string {
-  if (!d) return '—';
+  if (!d) return '-';
   return new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }
 ---
 
 <Layout
-  title="Currency & Flight Review Tracker — aviation.foundation"
-  description="Track 90-day passenger currency, your flight review, and instrument currency from a plain log of flights — every date computed from the actual rolling-window regulation, not a fixed offset."
+  title="Currency & Flight Review Tracker · aviation.foundation"
+  description="Track 90-day passenger currency, your flight review, and instrument currency from a plain log of flights - every date computed from the actual rolling-window regulation, not a fixed offset."
   currentPath="/tools/currency"
 >
   <div class="page-container container-site px-site">
@@ -53,7 +53,7 @@ function fmtDate(d: string | null): string {
         Log flights as they happen, and this works out the rest: 90-day passenger currency by day
         and by night, your flight review's 24-calendar-month window, and instrument currency's
         rolling 6 months plus the 6-month grace period before an IPC is required. Every date below
-        is recomputed from the log, not stored — so a flight logged late still lands correctly.
+        is recomputed from the log, not stored - so a flight logged late still lands correctly.
       </p>
     </header>
 
@@ -120,7 +120,7 @@ function fmtDate(d: string | null): string {
 
         <div class="cur-form-actions">
           <button type="submit" id="cur-save-btn" class="btn-solid">Log event</button>
-          <span id="cur-error" class="cur-error" hidden>Something went wrong — try again.</span>
+          <span id="cur-error" class="cur-error" hidden>Something went wrong - try again.</span>
         </div>
       </form>
 
@@ -139,7 +139,7 @@ function fmtDate(d: string | null): string {
                 <div class="cur-log-detail">
                   {e.type === 'landing' && `${e.dayLandings ?? 0} day, ${e.nightLandings ?? 0} night`}
                   {(e.type === 'instrument' || e.type === 'ipc') && `${e.approaches ?? 0} approaches${e.holds ? ', hold' : ''}${e.tracking ? ', tracking' : ''}`}
-                  {e.notes && <span class="cur-log-notes"> — {e.notes}</span>}
+                  {e.notes && <span class="cur-log-notes"> - {e.notes}</span>}
                 </div>
                 <button type="button" class="cur-log-delete" data-cur-delete={e.id} aria-label="Delete entry">×</button>
               </li>
@@ -158,15 +158,15 @@ function fmtDate(d: string | null): string {
         </details>
         <details class="cur-faq-item">
           <summary><span>Why does instrument currency need three separate things?</span><span class="cur-faq-icon" aria-hidden="true"></span></summary>
-          <p>61.57(c) requires six instrument approaches, a holding procedure, and intercepting and tracking courses — all within the preceding 6 calendar months, but not necessarily on the same flight. This tracker sums approaches across every logged instrument event in the rolling window and checks whether a hold and course tracking appear anywhere in that same window.</p>
+          <p>61.57(c) requires six instrument approaches, a holding procedure, and intercepting and tracking courses - all within the preceding 6 calendar months, but not necessarily on the same flight. This tracker sums approaches across every logged instrument event in the rolling window and checks whether a hold and course tracking appear anywhere in that same window.</p>
         </details>
         <details class="cur-faq-item">
           <summary><span>What happens after the grace period?</span><span class="cur-faq-icon" aria-hidden="true"></span></summary>
-          <p>If instrument currency isn't reestablished within 6 months of lapsing, the regulation requires an instrument proficiency check with an examiner or instructor before acting as PIC under IFR or in IMC — logging one as an "IPC" event here immediately restarts the 6-month clock, matching what the check itself does.</p>
+          <p>If instrument currency isn't reestablished within 6 months of lapsing, the regulation requires an instrument proficiency check with an examiner or instructor before acting as PIC under IFR or in IMC - logging one as an "IPC" event here immediately restarts the 6-month clock, matching what the check itself does.</p>
         </details>
         <details class="cur-faq-item">
           <summary><span>Is this a substitute for my logbook?</span><span class="cur-faq-icon" aria-hidden="true"></span></summary>
-          <p>No — your logbook is the legal record. This is a planning aid built from a summary of it, so the numbers are only as good as what's logged here. Nothing on this page is submitted anywhere or checked by aviation.foundation staff.</p>
+          <p>No, your logbook is the legal record. This is a planning aid built from a summary of it, so the numbers are only as good as what's logged here. Nothing on this page is submitted anywhere or checked by aviation.foundation staff.</p>
         </details>
       </div>
     </section>
