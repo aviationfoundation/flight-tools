@@ -99,37 +99,18 @@ const tools = [
 ---
 
 <Layout
-  title="Digital Flight Lab · aviation.foundation"
-  description="Free, browser-based aeronautical laboratories and flight planning utilities. Explore aerodynamics, weather, wind vectors, and center-of-gravity physics without equipment barriers."
+  title="Tools · aviation.foundation"
+  description="Free aviation tools published by aviation.foundation. Operational utilities with no account and no advertising."
   currentPath="/tools"
 >
   <div class="page-container container-site px-site">
     <header class="page-header">
-      <div class="eyebrow">Pathways Discover · Flight Lab</div>
-      <h1 class="serif page-title">Digital Flight Lab</h1>
+      <div class="eyebrow">Utilities</div>
+      <h1 class="serif page-title">Tools</h1>
       <p class="page-lead">
-        Interactive aeronautical laboratories and flight planning utilities. Non-commercial, free to access, and designed for curious students, air cadets, STEM classrooms, and active pilots to explore aerodynamics, weather, and aircraft physics without airport barriers.
+        Operational utilities for flight training and flight operations. Non-commercial, free to access, and transparently derived from primary aviation data sources.
       </p>
     </header>
-
-    <div class="lab-curriculum-strip">
-      <div class="lab-pill">
-        <span class="lab-pill-num col">01</span>
-        <span class="lab-pill-label">Atmospheric Physics & Weather</span>
-      </div>
-      <div class="lab-pill">
-        <span class="lab-pill-num col">02</span>
-        <span class="lab-pill-label">Vector Navigation & Triangles</span>
-      </div>
-      <div class="lab-pill">
-        <span class="lab-pill-num col">03</span>
-        <span class="lab-pill-label">Moments & Center of Gravity</span>
-      </div>
-      <div class="lab-pill">
-        <span class="lab-pill-num col">04</span>
-        <span class="lab-pill-label">Performance & Density Altitude</span>
-      </div>
-    </div>
 
     <section class="tool-list">
       {tools.map((tool) => (
@@ -169,37 +150,7 @@ const tools = [
     color: var(--text-muted);
   }
 
-  .lab-curriculum-strip {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    margin-top: 28px;
-    padding-top: 24px;
-    border-top: 1px solid var(--border);
-  }
-
-  .lab-pill {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background-color: var(--surface-card);
-    border: 1px solid var(--border);
-    padding: 6px 12px;
-    font-size: 12.5px;
-  }
-
-  .lab-pill-num {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--accent-sky);
-  }
-
-  .lab-pill-label {
-    color: var(--text-muted);
-    font-weight: 500;
-  }
-
-  .tool-list { margin-top: 36px; border-top: 1px solid var(--border-strong); }
+  .tool-list { margin-top: 44px; border-top: 1px solid var(--border-strong); }
 
   .tool-card {
     display: grid;
