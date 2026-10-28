@@ -31,7 +31,8 @@ const stations: Station[] = Array.from({ length: MAX_STATIONS }, (_, i) => {
     armIn: num(`s${n}a`),
   };
 });
-const activeCount = Math.max(3, stations.filter((s) => s.weightLb != null || s.armIn != null).length || 3);
+const lastFilled = stations.reduce((last, s, i) => (s.weightLb != null || s.armIn != null ? i + 1 : last), 0);
+const activeCount = Math.max(3, lastFilled);
 
 const maxGrossLb = num('mg');
 const fwdLimitIn = num('fl');
@@ -100,10 +101,13 @@ const overallOk = cgStatus !== false && !limits.overGross;
       <div class="eyebrow">Flight planning tool</div>
       <h1 class="serif page-title">Weight &amp; Balance Worksheet</h1>
       <p class="page-lead">
-        No aircraft is built in - every real chart belongs to a specific POH. Load your own empty
-        weight and arm, add the stations your aircraft has, and, if you want the result checked,
-        your own forward/aft limits or a full envelope polygon. The moments, the sum, and the CG
-        are the one part that's identical from a Cub to a King Air.
+        Enter your aircraft's empty weight and arm, then what's at each station. Add your POH limits
+        and the result is checked against your envelope. No aircraft is built in, so use the numbers
+        from your own POH.
+      </p>
+      <p class="wb-example-line">
+        {!hasAnyInput && <a href="/tools/weight-balance?ew=1500&amp;ea=40&amp;s1n=Front+seats&amp;s1w=340&amp;s1a=37&amp;s2n=Rear+seats&amp;s2w=160&amp;s2a=73&amp;s3n=Baggage+A&amp;s3w=40&amp;s3a=95&amp;s5n=Fuel&amp;s5w=240&amp;s5a=48&amp;mg=2400&amp;env=35%2C1500%0A35%2C1950%0A38.5%2C2400%0A47%2C2400%0A47%2C1500" class="wb-example">Fill in example numbers</a>}
+        {!hasAnyInput && <span class="wb-example-note">The example uses made-up figures, not any real aircraft.</span>}
       </p>
     </header>
 
@@ -394,6 +398,9 @@ const overallOk = cgStatus !== false && !limits.overGross;
     .wb-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
     .wb-limits-grid { grid-template-columns: minmax(0, 1fr); }
   }
+  .wb-example-line { margin: 14px 0 0; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }
+  .wb-example { font-size: 14px; font-weight: 600; color: var(--accent-blue); }
+  .wb-example-note { font-size: 12px; color: var(--text-subtle); }
 </style>
 
 <script>
