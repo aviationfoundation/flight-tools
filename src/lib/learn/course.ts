@@ -26,7 +26,14 @@ export type Block =
   | { kind: 'choice'; id: string; prompt: string; raw?: string; options: Option[] }
   | { kind: 'answer'; id: string; prompt: string; raw?: string; accept: string[]; placeholder: string; why: string }
   | { kind: 'pick'; id: string; prompt: string; raw: string; choices: string[]; answer: string; why: string }
-  | { kind: 'triage'; id: string; flight: Array<[string, string]>; items: TriageItem[]; debrief?: { title: string; text: string } };
+  | { kind: 'triage'; id: string; flight: Array<[string, string]>; items: TriageItem[]; map?: DrillMap; debrief?: { title: string; text: string } }
+  | { kind: 'timeline'; caption: string; window: [number, number]; offsetHours: number; localLabel: string };
+
+export interface DrillMap {
+  route: Array<[number, number]>;
+  places: Array<{ label: string; lat: number; lon: number }>;
+  areas: Array<{ label: string; lat: number; lon: number; radiusNm: number }>;
+}
 
 export interface Lesson {
   id: string;
@@ -40,7 +47,7 @@ export const COURSE_ID = 'notam';
 
 const RUNWAY = `A1287/26 NOTAMN
 Q) CZVR/QMRLC/IV/NBO/A/000/999/4911N12311W005
-A) CYVR B) 2610300400 C) 2611072359
+A) CYVR B) 2610300400 C) 2611071400
 D) DAILY 0400-1400
 E) RWY 08L/26R CLSD DUE TO REHABILITATION WORK.`;
 
@@ -68,7 +75,7 @@ export const LESSONS: Lesson[] = [
       },
       {
         kind: 'p',
-        text: 'Most countries write NOTAMs in the ICAO format, and that is where this course starts. Lesson 8 covers the format the FAA uses inside the US. Here is a runway closure at Vancouver. Tap or hover over each part.',
+        text: 'Most countries write NOTAMs in the ICAO format, and that is where this course starts; lesson 8 covers the format the FAA uses inside the US. Every ICAO NOTAM has three parts: a first line that names it, a Q-line that sums it up in code, and lettered items from A) to G). Here is a runway closure at Vancouver. Tap or hover over each part.',
       },
       {
         kind: 'notam',
@@ -78,7 +85,7 @@ export const LESSONS: Lesson[] = [
           { text: 'Q) CZVR/QMRLC/IV/NBO/A/000/999/4911N12311W005', label: 'Q-line', note: 'The whole NOTAM in code, for the computers that sort briefings.' },
           { text: 'A) CYVR', label: 'Where', note: 'Vancouver International, by its ICAO code.' },
           { text: 'B) 2610300400', label: 'From', note: '30 October 2026, 04:00 UTC.' },
-          { text: 'C) 2611072359', label: 'Until', note: '7 November 2026, 23:59 UTC.' },
+          { text: 'C) 2611071400', label: 'Until', note: '7 November 2026, 14:00 UTC, the end of the last daily closure.' },
           { text: 'D) DAILY 0400-1400', label: 'Schedule', note: 'Only between 04:00 and 14:00 UTC each day.' },
           { text: 'E) RWY 08L/26R CLSD DUE TO REHABILITATION WORK.', label: 'What', note: 'The message: runway 08L/26R is closed for rebuilding.' },
         ],
@@ -87,7 +94,7 @@ export const LESSONS: Lesson[] = [
         kind: 'table',
         head: ['Item', 'What it tells you', 'Present'],
         rows: [
-          ['A)', 'Where: an aerodrome, or a whole flight information region (FIR)', 'Always'],
+          ['A)', 'Where: an aerodrome, or a flight information region (FIR), the large block of airspace one area control centre looks after', 'Always'],
           ['B)', 'When it starts, in UTC', 'Always'],
           ['C)', 'When it ends, in UTC', 'Except on cancellations'],
           ['D)', 'A schedule, when it isn\'t in force the whole time', 'When needed'],
@@ -98,7 +105,7 @@ export const LESSONS: Lesson[] = [
       {
         kind: 'rule',
         title: 'Four questions',
-        text: 'A NOTAM matters to you only if it touches your flight on all four: where it is, when it is, how high it reaches, and whether it applies to your kind of flying. A) answers the first, B), C) and D) the second, F) and G) the third, and E) the fourth. The last lesson puts them together.',
+        text: 'A NOTAM matters to you only if it touches your flight on all four: where it is, when it is, how high it reaches, and whether it applies to your kind of flying. Where comes from A), the Q-line position and any positions in E). When comes from B), C) and D). How high comes from F) and G). E) says what is happening, and with the Q-line\'s traffic letters, who it applies to. The last lesson puts them together.',
       },
       {
         kind: 'pick',
@@ -124,9 +131,9 @@ export const LESSONS: Lesson[] = [
         id: 'parts-no-fg',
         prompt: 'This NOTAM has no F) or G). Why?',
         options: [
-          { text: 'It is about something on the ground at the airport, so there is no block of airspace to describe', correct: true, why: 'F) and G) describe airspace. Aerodrome NOTAMs about runways, taxiways or lights usually leave them out.' },
-          { text: 'The altitudes were left out by mistake', why: 'F) and G) are only required when the NOTAM covers a block of airspace, such as a drone area or a restricted area.' },
-          { text: 'You have to look the altitudes up in the AIP', why: 'There is nothing to look up. A closed runway has no altitude.' },
+          { text: 'It is about the ground, so there is no airspace to describe', correct: true, why: 'F) and G) describe a block of airspace. Aerodrome NOTAMs about runways, taxiways or lights usually leave them out.' },
+          { text: 'The altitudes were left out by mistake, so ask the issuer', why: 'F) and G) are only required when the NOTAM covers a block of airspace, such as a drone area or a restricted area.' },
+          { text: 'The altitudes are in the AIP, so look them up there', why: 'There is nothing to look up. A closed runway has no altitude.' },
         ],
       },
     ],
@@ -215,7 +222,7 @@ export const LESSONS: Lesson[] = [
           { text: 'CZVR', label: 'FIR', note: 'The flight information region: Vancouver.' },
           { text: 'QMRLC', label: 'Q-code', note: 'Subject MR, runway. Condition LC, closed.' },
           { text: 'IV', label: 'Traffic', note: 'Matters to IFR and VFR flights. I alone means IFR only.' },
-          { text: 'NBO', label: 'Purpose', note: 'For immediate attention, for the briefing, and significant to operations.' },
+          { text: 'NBO', label: 'Purpose', note: 'N: for immediate attention. B: goes into briefings. O: matters to flight operations.' },
           { text: 'A', label: 'Scope', note: 'A for aerodrome. E is en route, W a navigation warning.' },
           { text: '000', label: 'Lower', note: 'Lowest flight level: the surface.' },
           { text: '999', label: 'Upper', note: 'Highest flight level: 999 means no upper limit.' },
@@ -241,7 +248,7 @@ export const LESSONS: Lesson[] = [
       },
       {
         kind: 'p',
-        text: 'Lower and upper are flight levels, in hundreds of feet: 050 is 5,000 ft. Aerodrome NOTAMs use 000 and 999, which means no limit at all. When F) and G) give exact heights, use those; the Q-line rounds them out to whole flight levels.',
+        text: 'Lower and upper are flight levels: altitude in hundreds of feet on the standard pressure setting, so 050 is about 5,000 ft. 000 and 999 are codes for the surface and no upper limit, and aerodrome NOTAMs use that pair. When F) and G) give exact heights, use those; the Q-line rounds them out to whole flight levels.',
       },
       {
         kind: 'p',
@@ -279,9 +286,9 @@ export const LESSONS: Lesson[] = [
         id: 'q-limits',
         prompt: 'A Q-line reads …/A/000/999/… . Which altitudes does it cover?',
         options: [
-          { text: 'From the surface up, with no upper limit', correct: true, why: '000 is the surface and 999 means no upper limit. It is the standard pair for an aerodrome NOTAM.' },
-          { text: 'From 0 to 999 feet', why: 'The limits are flight levels, in hundreds of feet. 999 would be 99,900 ft, which is why it is used to mean no limit.' },
-          { text: 'Flight levels 0 to 99', why: 'Each field is a full three-digit flight level: 999, not 99.' },
+          { text: 'Surface up, no upper limit', correct: true, why: '000 is the surface and 999 means no upper limit. It is the standard pair for an aerodrome NOTAM.' },
+          { text: 'From the surface to 999 ft above it', why: 'The limits are flight levels, in hundreds of feet, and 999 is the code for no upper limit.' },
+          { text: 'From flight level 0 to flight level 99', why: 'Each field is a full three-digit flight level: 999, not 99.' },
         ],
       },
     ],
@@ -317,7 +324,7 @@ export const LESSONS: Lesson[] = [
       },
       {
         kind: 'p',
-        text: 'C) can carry two other things. EST after the time means the end is an estimate: expect a replacement or a cancellation, and don\'t count on it ending on time. PERM in place of a time means the change is permanent and will be written into the AIP and charts.',
+        text: 'C) can carry two other things. EST after the time means the end is an estimate: expect a replacement or a cancellation, and don\'t count on it ending on time. If an EST time passes and nothing replaced the NOTAM, don\'t assume the condition is over; ask flight services. PERM in place of a time means the change is permanent and will be written into the AIP and charts. You may also meet UFN, until further notice, in US domestic NOTAMs and in E) text; ICAO NOTAMs may not use it in C).',
       },
       {
         kind: 'rule',
@@ -339,9 +346,9 @@ export const LESSONS: Lesson[] = [
         id: 'when-est',
         prompt: 'C) 2611072359 EST. What should you plan on?',
         options: [
-          { text: 'It may end earlier or later than 23:59 UTC on 7 November, so check for a replacement', correct: true, why: 'EST marks an estimate. The issuer must replace or cancel the NOTAM, so look for that before you rely on the end time.' },
-          { text: 'It ends at 23:59 UTC on 7 November', why: 'EST means the end time is only an estimate.' },
-          { text: 'It ends at 23:59 Eastern Standard Time', why: 'EST in a NOTAM means estimated. NOTAM times are always UTC.' },
+          { text: 'An end that may move, so look for a replacement', correct: true, why: 'EST marks an estimate. The issuer must replace or cancel the NOTAM, so look for that before you rely on the end time.' },
+          { text: 'An end at 23:59 UTC on 7 November, as written', why: 'EST means the end time is only an estimate.' },
+          { text: 'An end at 23:59 Eastern Standard Time, 04:59 UTC', why: 'EST in a NOTAM means estimated. NOTAM times are always UTC.' },
         ],
       },
       {
@@ -362,14 +369,14 @@ export const LESSONS: Lesson[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'B) and C) bracket the whole period. When the thing only happens part of that time, D) gives the schedule, also in UTC.',
+        text: 'B) and C) bracket the whole period. When the thing only happens part of that time, D) gives the schedule, also in UTC. C) is then the end of the last period in the schedule.',
       },
       {
         kind: 'notam',
         raw: RUNWAY,
         marks: [
           { text: 'B) 2610300400', label: 'From', note: 'The first day: 30 October.' },
-          { text: 'C) 2611072359', label: 'Until', note: 'The last day: 7 November.' },
+          { text: 'C) 2611071400', label: 'Until', note: 'The end of the last closure: 7 November, 14:00 UTC.' },
           { text: 'D) DAILY 0400-1400', label: 'Schedule', note: 'Every day, 04:00 to 14:00 UTC.' },
         ],
       },
@@ -378,13 +385,21 @@ export const LESSONS: Lesson[] = [
         text: 'So runway 08L/26R isn\'t closed for nine days straight. It is closed for ten hours a day, and open from 14:00 until 04:00 UTC.',
       },
       {
+        kind: 'timeline',
+        caption: 'The daily closure in UTC, and the same hours on a Vancouver clock.',
+        window: [4, 14],
+        offsetHours: -7,
+        localLabel: 'Vancouver, UTC−7',
+      },
+      {
         kind: 'table',
         head: ['D) says', 'Means'],
         rows: [
           ['DAILY 0400-1400', 'Every day, 04:00 to 14:00 UTC'],
           ['MON-FRI 0700-1500', 'Monday to Friday, 07:00 to 15:00 UTC'],
           ['DAILY 2200-0500', 'Overnight, crossing midnight UTC'],
-          ['SR-SS', 'Sunrise to sunset'],
+          ['SR-SS or HJ', 'Sunrise to sunset'],
+          ['SS-SR or HN', 'Sunset to sunrise'],
           ['H24', 'All day'],
         ],
       },
@@ -395,7 +410,7 @@ export const LESSONS: Lesson[] = [
       {
         kind: 'choice',
         id: 'schedule-1500',
-        prompt: 'With B) 2610300400, C) 2611072359 and D) DAILY 0400-1400, is the runway closed at 15:00 UTC on 31 October?',
+        prompt: 'With B) 2610300400, C) 2611071400 and D) DAILY 0400-1400, is the runway closed at 15:00 UTC on 31 October?',
         options: [
           { text: 'No', correct: true, why: '31 October is inside B) to C), but 15:00 is after the daily window ends at 14:00.' },
           { text: 'Yes', why: 'The date is inside B) to C), but D) limits the closure to 04:00 to 14:00 UTC each day.' },
@@ -406,7 +421,7 @@ export const LESSONS: Lesson[] = [
         id: 'schedule-after-c',
         prompt: 'Same NOTAM. Is the runway closed at 05:00 UTC on 8 November?',
         options: [
-          { text: 'No', correct: true, why: '05:00 is inside the daily window, but C) ended the NOTAM at 23:59 UTC on 7 November.' },
+          { text: 'No', correct: true, why: '05:00 is inside the daily window, but C) ended the NOTAM at 14:00 UTC on 7 November.' },
           { text: 'Yes', why: 'D) only applies between B) and C). After C) the NOTAM is over.' },
         ],
       },
@@ -415,8 +430,8 @@ export const LESSONS: Lesson[] = [
         id: 'schedule-utc-day',
         prompt: 'A NOTAM at Vancouver says D) MON-FRI 0100-0500. You land at 19:00 local time on Sunday 25 October, when Vancouver is UTC−7. Is the NOTAM in force?',
         options: [
-          { text: 'Yes: 19:00 Sunday local is 02:00 Monday UTC, inside the window', correct: true, why: 'Add 7 hours: 02:00 UTC on Monday 26 October. MON-FRI counts UTC days.' },
-          { text: 'No: it is Sunday', why: 'It is Sunday in Vancouver, but Monday in UTC, and D) uses UTC.' },
+          { text: 'Yes: that is 02:00 on Monday, UTC', correct: true, why: 'Add 7 hours: 02:00 UTC on Monday 26 October. MON-FRI counts UTC days.' },
+          { text: 'No: it is still Sunday in Vancouver', why: 'It is Sunday in Vancouver, but Monday in UTC, and D) uses UTC.' },
         ],
       },
     ],
@@ -466,6 +481,23 @@ export const LESSONS: Lesson[] = [
           ['UFN', 'Until further notice'],
           ['THR', 'Threshold'],
           ['FREQ', 'Frequency'],
+          ['PJE', 'Parachute jumping exercise'],
+          ['UAS', 'Unmanned aircraft system'],
+          ['TEMPO', 'Temporary'],
+        ],
+      },
+      {
+        kind: 'table',
+        head: ['Lights and aids', 'Meaning'],
+        rows: [
+          ['HIRL, MIRL', 'High and medium intensity runway lights'],
+          ['RCLL', 'Runway centre line lights'],
+          ['REIL', 'Runway end identifier lights'],
+          ['ALS', 'Approach lighting system'],
+          ['PAPI', 'Lights beside the runway that show your approach angle'],
+          ['ILS, LOC', 'Instrument landing system, and its localizer'],
+          ['CTAF', 'Common traffic advisory frequency'],
+          ['TWR', 'Tower'],
         ],
       },
       {
@@ -474,26 +506,39 @@ export const LESSONS: Lesson[] = [
       },
       {
         kind: 'p',
-        text: 'Positions in E) are usually degrees, minutes and seconds: 491230N 1231020W is 49°12′30″N 123°10′20″W. Obstacle NOTAMs often give two numbers: the height above the ground (AGL) and the elevation of the top above sea level (AMSL). Your altimeter, set to the local pressure, reads above sea level, so compare it with the AMSL number.',
+        text: 'Positions in E) are usually degrees, minutes and seconds: 491230N 1231020W is 49°12′30″N 123°10′20″W. Plot them on your chart, or let your EFB or briefing app draw them, before deciding whether they are near your route. Obstacle NOTAMs often give two numbers: the height above the ground (AGL) and the elevation of the top above sea level (AMSL). ELEV already includes the ground, so don\'t add the two. Your altimeter, set to the local pressure, reads above sea level, so compare it with the AMSL number.',
       },
       {
         kind: 'choice',
         id: 'text-papi',
         prompt: 'What does PAPI RWY 26R U/S mean?',
         options: [
-          { text: 'The approach slope lights for runway 26R are out of service', correct: true, why: 'PAPI is the row of lights beside the runway that shows whether you are on the glide path. U/S is unserviceable.' },
-          { text: 'Runway 26R is closed', why: 'Only the PAPI is out. The runway itself is open.' },
-          { text: 'Runway 26R is only usable with prior permission', why: 'Prior permission would be PPR. U/S means unserviceable.' },
+          { text: 'The approach slope lights for 26R are out', correct: true, why: 'PAPI is the row of lights beside the runway that shows whether you are on the glide path. U/S is unserviceable. The runway stays open.' },
+          { text: 'The runway edge lights for 26R are out', why: 'Runway edge lights would be REDL, or HIRL and MIRL for their intensity. PAPI is the approach slope indicator.' },
+          { text: 'The approach lighting for 26R is out', why: 'The approach lighting system, the lights leading up to the runway, is ALS. PAPI shows your approach angle.' },
         ],
       },
       {
-        kind: 'pick',
+        kind: 'choice',
         id: 'text-weight',
-        prompt: 'Tap the part that says who can\'t use the runway.',
-        raw: 'E) RWY 16/34 CLSD TO ACFT OVER 5700 KG DUE SFC DAMAGE.',
-        choices: ['RWY 16/34', 'CLSD', 'ACFT OVER 5700 KG', 'SFC DAMAGE'],
-        answer: 'ACFT OVER 5700 KG',
-        why: 'Only aircraft heavier than 5,700 kg are kept off. A Cessna 172, at about 1,100 kg fully loaded, can still use it. SFC DAMAGE is the reason: the surface is damaged.',
+        prompt: 'E) RWY 16/34 CLSD TO ACFT OVER 5700 KG DUE SFC DAMAGE. Can a Cessna 172, about 1,100 kg fully loaded, use runway 16/34?',
+        options: [
+          { text: 'Yes', correct: true, why: 'The runway is closed only to aircraft heavier than 5,700 kg. SFC DAMAGE is the reason: the surface is damaged.' },
+          { text: 'No: the runway is closed', why: 'Read on past CLSD: TO ACFT OVER 5700 KG limits the closure to heavy aircraft.' },
+          { text: 'Only with prior permission', why: 'Nothing here asks for permission. That would be PPR.' },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Runway works often shorten a runway instead of closing it. The declared distances say what is left: TORA, the take-off run available; TODA, take-off distance available; ASDA, accelerate-stop distance available; and LDA, landing distance available. A displaced threshold, DTHR, moves the landing threshold down the runway, which shortens the LDA but not always the take-off run.',
+      },
+      {
+        kind: 'answer',
+        id: 'text-lda',
+        prompt: 'E) RWY 26 LDA 1200M DUE WIP. How many metres can you use to land on runway 26?',
+        accept: ['1200', '1200m'],
+        placeholder: 'Metres',
+        why: 'LDA is the landing distance available: 1,200 m. Check it against your landing distance from the POH, with the corrections for weight, wind and surface.',
       },
       {
         kind: 'choice',
@@ -510,7 +555,7 @@ export const LESSONS: Lesson[] = [
         id: 'text-crane',
         prompt: 'CRANE 285FT AGL, ELEV 512FT AMSL sits under your route. You cross it with 1,000 ft on your altimeter, set to the local pressure. How far above the top of the crane are you?',
         options: [
-          { text: '488 ft', correct: true, why: 'The top of the crane is at 512 ft above sea level and you are at 1,000 ft above sea level: 1,000 − 512 = 488 ft.' },
+          { text: '488 ft', correct: true, why: 'The top of the crane is at 512 ft above sea level and you are at 1,000 ft: 1,000 − 512 = 488 ft. That is less than the 500 ft you must keep from any structure outside built-up areas, and 1,000 ft is the minimum over built-up areas, so plan to fly higher.' },
           { text: '715 ft', why: '285 ft is the crane\'s height above the ground. Your altimeter reads above sea level, so compare it with the 512 ft elevation.' },
           { text: 'It depends on the ground below', why: 'ELEV already includes the ground: 512 ft AMSL is the top of the crane above sea level.' },
         ],
@@ -543,7 +588,7 @@ export const LESSONS: Lesson[] = [
           ['SFC or GND', 'The ground'],
           ['1200FT AGL', '1,200 ft above the ground below'],
           ['8000FT AMSL', '8,000 ft above sea level, which your altimeter shows on the local pressure setting'],
-          ['FL120', 'Flight level 120: 12,000 ft on the standard setting, 1013 hPa or 29.92 inHg'],
+          ['FL180', 'Flight level 180: 18,000 ft on the standard setting, 1013 hPa or 29.92 inHg. In Canada and the US, flight levels start at 18,000 ft, so lower limits there are given in feet.'],
           ['UNL', 'No upper limit'],
         ],
       },
@@ -556,9 +601,9 @@ export const LESSONS: Lesson[] = [
         id: 'heights-cruise',
         prompt: 'An area with F) SFC and G) 2500FT AMSL surrounds your departure airport. You will cruise at 3,500 ft. Does it affect you?',
         options: [
-          { text: 'Not in the cruise, but it does while you climb out through it', correct: true, why: 'You start on the ground inside it and climb through 2,500 ft before you are above it.' },
-          { text: 'No, because you cruise above it', why: 'You still take off and climb inside the block.' },
-          { text: 'Yes, for the whole flight', why: 'Once you are above 2,500 ft, or outside the area, you are clear of it.' },
+          { text: 'Only while you climb out through it', correct: true, why: 'You start on the ground inside it and climb through 2,500 ft before you are above it.' },
+          { text: 'No: you cruise 1,000 ft above it', why: 'You still take off and climb inside the block.' },
+          { text: 'Yes: for the whole flight', why: 'Once you are above 2,500 ft, or outside the area, you are clear of it.' },
         ],
       },
       {
@@ -625,11 +670,11 @@ export const LESSONS: Lesson[] = [
       {
         kind: 'choice',
         id: 'us-fdc',
-        prompt: '!FDC 6/1234 ZSE WA..AIRSPACE SEATTLE, WA..TEMPORARY FLIGHT RESTRICTIONS… What kind of NOTAM is this?',
+        prompt: '!FDC 6/1234 ZSE WA..AIRSPACE SEATTLE, WA..TEMPORARY FLIGHT RESTRICTIONS… lies across your route. What do you do?',
         options: [
-          { text: 'A temporary flight restriction from the FAA\'s Flight Data Center', correct: true, why: '!FDC marks a Flight Data Center NOTAM, and the text says TEMPORARY FLIGHT RESTRICTIONS. Plan around the area or get the clearance it describes.' },
-          { text: 'A closure at Seattle-Tacoma airport', why: 'ZSE is Seattle Center, the en-route facility, not the airport. The NOTAM restricts airspace.' },
-          { text: 'A frequency change at Seattle Center', why: 'The keyword is AIRSPACE and the text is a TFR.' },
+          { text: 'Stay out unless you meet its conditions', correct: true, why: 'A TFR closes the airspace it describes to everyone except the flights it allows. Read the conditions in the text, and plan around it if you don\'t meet them.' },
+          { text: 'Nothing unless you land at Seattle', why: 'ZSE is Seattle Center, the en-route facility. A TFR restricts the airspace itself, wherever you are going.' },
+          { text: 'Call Seattle Center for a new frequency', why: 'The keyword is AIRSPACE and the text is a restriction, not a frequency change.' },
         ],
       },
       {
@@ -637,9 +682,83 @@ export const LESSONS: Lesson[] = [
         id: 'us-icao',
         prompt: 'What is the ICAO location indicator for SEA?',
         options: [
-          { text: 'KSEA', correct: true, why: 'In the contiguous US, the ICAO code is usually K followed by the three-letter FAA identifier.' },
+          { text: 'KSEA', correct: true, why: 'In the contiguous US, an airport with a three-letter identifier usually has K added in front for its ICAO code. Identifiers with digits in them, like S50, usually have no ICAO code at all.' },
           { text: 'ZSE', why: 'ZSE is Seattle Center, the en-route control facility.' },
           { text: 'CSEA', why: 'C starts Canadian codes, such as CYVR.' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'conditions',
+    title: 'Runway conditions in winter',
+    summary: 'The three-number runway condition codes, and how old a report can be.',
+    minutes: 5,
+    blocks: [
+      {
+        kind: 'p',
+        text: 'In winter, airports report what is on the runway and how well you can expect to stop on it. In the US the report comes as a FICON NOTAM, short for field condition. Other countries use the same 0 to 6 codes, sometimes in a separate report called a SNOWTAM.',
+      },
+      {
+        kind: 'notam',
+        raw: '!SEA 12/045 SEA RWY 16L FICON 5/3/2 100 PCT 1/8IN WET SN OBS AT 2612140530. 2612140530-2612150530',
+        marks: [
+          { text: 'RWY 16L', label: 'Runway', note: 'The codes run in the direction of 16L.' },
+          { text: '5/3/2', label: 'Codes', note: 'One code for each third of the runway.' },
+          { text: '100 PCT', label: 'Coverage', note: 'All of the runway is covered.' },
+          { text: '1/8IN WET SN', label: 'Contaminant', note: 'An eighth of an inch of wet snow.' },
+          { text: 'OBS AT 2612140530', label: 'Measured', note: '14 December 2026, 05:30 UTC.' },
+        ],
+      },
+      {
+        kind: 'table',
+        head: ['Code', 'Braking you can expect'],
+        rows: [
+          ['6', 'Dry runway'],
+          ['5', 'Good'],
+          ['4', 'Good to medium'],
+          ['3', 'Medium'],
+          ['2', 'Medium to poor'],
+          ['1', 'Poor'],
+          ['0', 'Nil'],
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Each number covers a third of the runway: the first, middle and last third in the direction of the runway named. RWY 16L 5/3/2 means good braking where you touch down on 16L, medium in the middle and medium to poor for the last third, where you need it most. Land on 34R, the same pavement the other way, and you meet them in reverse: 2, then 3, then 5.',
+      },
+      {
+        kind: 'p',
+        text: 'After the codes come how much of the runway is covered, how deep, and with what. OBS AT is when someone measured it. Snow keeps falling and ploughs keep working after that time, so check how old the report is and ask the airport or listen to the ATIS for the latest.',
+      },
+      {
+        kind: 'choice',
+        id: 'conditions-worst',
+        prompt: 'RWY 16L FICON 5/3/2. You land on 16L. Where is braking worst?',
+        options: [
+          { text: 'The last third, where you slow down', correct: true, why: 'The codes run from the 16L end: 5 at touchdown, 3 in the middle and 2, medium to poor, for the last third.' },
+          { text: 'The first third, where you touch down', why: 'The first code, 5, covers your touchdown on 16L, and 5 is good.' },
+          { text: 'It is the same along the runway', why: 'Three different codes mean three different surfaces.' },
+        ],
+      },
+      {
+        kind: 'choice',
+        id: 'conditions-reverse',
+        prompt: 'Same report, but the wind favours runway 34R. What do you meet at touchdown?',
+        options: [
+          { text: 'Code 2, medium to poor', correct: true, why: '34R is the same pavement as 16L in the other direction, so the codes reverse: 2, 3, 5.' },
+          { text: 'Code 5, good', why: 'Code 5 is the touchdown end for 16L. On 34R that third is where you finish your rollout.' },
+          { text: 'Code 3, medium', why: 'Code 3 is the middle third in either direction.' },
+        ],
+      },
+      {
+        kind: 'choice',
+        id: 'conditions-age',
+        prompt: 'The report says OBS AT 2612140530. You land at 09:30 UTC with snow still falling. What do you do?',
+        options: [
+          { text: 'Ask for current conditions', correct: true, why: 'The report is four hours old and it is still snowing. ATIS, the tower or the airport can tell you what the runway is like now.' },
+          { text: 'Use the codes until the NOTAM ends', why: 'The NOTAM stays in force until it is replaced, but the surface keeps changing. A four-hour-old report during snowfall is history.' },
+          { text: 'Assume it has improved since then', why: 'Snow falling since 05:30 could have made it worse. Find out instead of guessing.' },
         ],
       },
     ],
@@ -652,7 +771,7 @@ export const LESSONS: Lesson[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'Most NOTAM mistakes come from a handful of situations. Each one below has caught pilots who could read every item.',
+        text: 'Reading every item correctly doesn\'t protect you from the situations below. Each one needs a habit, not more decoding.',
       },
       {
         kind: 'notam',
@@ -668,16 +787,16 @@ E) RWY 08L/26R OPEN.`,
       },
       {
         kind: 'p',
-        text: 'When the Q-code and E) disagree, one of them is wrong, and the NOTAM can\'t tell you which. E) is the sentence the issuer wrote, so it is the likelier reading. A closed runway is the worse surprise, though, so plan for it and call to find out.',
+        text: 'When the Q-code and E) disagree, one of them is wrong, and the NOTAM can\'t tell you which. Either part can hold the typo. Treat it as the more restrictive reading, here a closed runway, until someone at flight services or the airport confirms otherwise.',
       },
       {
         kind: 'choice',
         id: 'traps-conflict',
         prompt: 'You find the NOTAM above in your briefing. What do you do?',
         options: [
-          { text: 'Plan as if the runway is closed, and call flight services or the airport to confirm', correct: true, why: 'Planning for the worse reading costs little. One call settles which part is wrong.' },
-          { text: 'Trust the Q-code', why: 'The Q-code is typed or generated like everything else, and here it is probably the error: the text is specific.' },
-          { text: 'Trust E) and plan to use the runway', why: 'E) is the likelier reading, but if it is the wrong one you find a closed runway on final. Confirm first.' },
+          { text: 'Plan for it being closed, and call to confirm', correct: true, why: 'Planning for the worse reading costs little. One call to flight services or the airport settles which part is wrong.' },
+          { text: 'Trust the Q-code: computers sort on it', why: 'The Q-code is typed or generated like everything else, and here it is probably the error: the text is specific.' },
+          { text: 'Trust E): the issuer wrote that sentence', why: 'People mistype sentences too. If E) is the wrong part, you find a closed runway on final. Confirm first.' },
         ],
       },
       {
@@ -693,9 +812,9 @@ E) RWY 08L/26R OPEN.`,
         id: 'traps-route',
         prompt: 'You request NOTAMs for CYXX and CYYJ only. What can you miss?',
         options: [
-          { text: 'Airspace and activity NOTAMs along the route between them', correct: true, why: 'En-route NOTAMs are filed under the FIR, here CZVR, or other locations. A route briefing includes them.' },
-          { text: 'Nothing: a NOTAM always names the nearest airport', why: 'En-route NOTAMs often name a FIR in A), like CZVR, not an airport.' },
-          { text: 'Only NOTAMs older than a week', why: 'Age has nothing to do with it. Where the NOTAM is filed decides whether an airport-only request returns it.' },
+          { text: 'Airspace NOTAMs along the route', correct: true, why: 'En-route NOTAMs are filed under the FIR, here CZVR, or other locations. A route briefing includes them.' },
+          { text: 'Nothing: every NOTAM names the nearest airport', why: 'En-route NOTAMs often name a FIR in A), like CZVR, not an airport.' },
+          { text: 'Only NOTAMs issued in the last 24 hours', why: 'Age has nothing to do with it. Where the NOTAM is filed decides whether an airport-only request returns it.' },
         ],
       },
       {
@@ -713,7 +832,7 @@ E) RWY 08L/26R OPEN.`,
   {
     id: 'brief',
     title: 'Brief a flight',
-    summary: 'Nine NOTAMs, one flight. Decide which ones change your plan.',
+    summary: 'Eight NOTAMs, one flight. Decide which ones change your plan.',
     minutes: 10,
     blocks: [
       {
@@ -732,6 +851,20 @@ E) RWY 08L/26R OPEN.`,
           ['Arrive', 'About 16:40 UTC'],
           ['Fuel', 'You plan to refuel at Victoria'],
         ],
+        map: {
+          route: [[49.0253, -122.3608], [48.6469, -123.4258]],
+          places: [
+            { label: 'CYXX', lat: 49.0253, lon: -122.3608 },
+            { label: 'CYYJ', lat: 48.6469, lon: -123.4258 },
+            { label: 'CYCD', lat: 49.0522, lon: -123.87 },
+            { label: 'CYVR', lat: 49.1939, lon: -123.1844 },
+          ],
+          areas: [
+            { label: 'A2205/26', lat: 48.6333, lon: -123.35, radiusNm: 1 },
+            { label: 'A2206/26', lat: 49.1667, lon: -123.9, radiusNm: 2 },
+            { label: 'A2207/26', lat: 48.8, lon: -123.0, radiusNm: 5 },
+          ],
+        },
         items: [
           {
             raw: `A2201/26 NOTAMN
@@ -742,21 +875,12 @@ E) TWY B CLSD BTN TWY C AND APN.`,
             why: 'You taxi at Abbotsford around 15:50 UTC, inside the 15:00 to 20:00 window. Plan a taxi route that avoids taxiway B.',
           },
           {
-            raw: `A2202/26 NOTAMN
-Q) CZVR/QMRLC/IV/NBO/A/000/999/4901N12222W005
-A) CYXX B) 2610280000 C) 2610310600
-D) DAILY 0200-0600
-E) RWY 07/25 CLSD DUE MAINT.`,
-            affects: false,
-            why: 'On its own, the daily 02:00 to 06:00 window misses a 16:00 departure. It has also been replaced: look for A2208/26.',
-          },
-          {
             raw: `A2203/26 NOTAMN
 Q) CZVR/QICAS/I/NBO/A/000/999/4838N12325W005
 A) CYYJ B) 2610281200 C) 2611042359 EST
 E) ILS RWY 09 U/S.`,
             affects: false,
-            why: 'An ILS only serves instrument approaches, and the Q-line traffic is I, for IFR. Flying VFR you won\'t use it. If the weather pushed you onto an IFR plan, it would matter.',
+            why: 'An ILS only serves instrument approaches, and the Q-line traffic is I, for IFR. It doesn\'t change a VFR arrival. It would matter if you planned a practice approach, or if the weather pushed you onto an IFR plan.',
           },
           {
             raw: `A2204/26 NOTAMN
@@ -773,14 +897,14 @@ A) CYYJ B) 2610291530 C) 2610291730
 E) UAS ACTIVITY WI 1NM RADIUS OF 483800N 1232100W.
 F) SFC G) 1200FT AGL`,
             affects: true,
-            why: 'The drones are about 3 NM east of Victoria, under your arrival, from 15:30 to 17:30 UTC and up to about 1,300 ft on your altimeter. You arrive at about 16:40, descending through exactly those heights. Plan an arrival that keeps clear and ask the tower where they are working.',
+            why: 'The drones are about 3 NM east of Victoria, under your arrival, from 15:30 to 17:30 UTC and up to about 1,300 ft on your altimeter. You arrive at about 16:40, descending through exactly those heights. Plan an arrival that stays out of the 1 NM circle below that height. The tower may know about the activity, but it can\'t see the drones for you.',
           },
           {
             raw: `A2206/26 NOTAMN
 Q) CZVR/QWPLW/IV/BO/W/000/120/4910N12354W002
 A) CYCD B) 2610291400 C) 2610292200
 E) PJE WI 2NM RADIUS OF 491000N 1235400W.
-F) SFC G) FL120`,
+F) SFC G) 12000FT AMSL`,
             affects: false,
             why: 'The parachute drop zone is near Nanaimo, about 35 NM northwest of Victoria and well off your route. It is the right time and height, but the wrong place.',
           },
@@ -796,11 +920,11 @@ F) SFC G) 6000FT AMSL`,
           {
             raw: `A2208/26 NOTAMR A2202/26
 Q) CZVR/QMRLC/IV/NBO/A/000/999/4901N12222W005
-A) CYXX B) 2610280000 C) 2610310600
+A) CYXX B) 2610280000 C) 2610301700
 D) DAILY 1500-1700
 E) RWY 07/25 CLSD DUE MAINT.`,
             affects: true,
-            why: 'This replaces A2202/26 and moves the daily closure to 15:00 to 17:00 UTC, so runway 07/25 is closed when you depart. Expect to use runway 01/19.',
+            why: 'Runway 07/25 is closed from 15:00 to 17:00 UTC each day, so it is closed when you depart. Expect runway 01/19, and check the wind against your crosswind limit before you commit to it. This NOTAM replaced A2202/26, which is why A2202/26 isn\'t in your briefing.',
           },
           {
             raw: `A2209/26 NOTAMN
@@ -813,7 +937,7 @@ E) RWY 08R/26L CLSD.`,
         ],
         debrief: {
           title: 'Where, when, how high, and whether it applies to you',
-          text: 'Five of these nine NOTAMs changed the plan, and each one passed all four questions. The four that didn\'t each failed at least one: the wrong time, the wrong kind of flight, or the wrong place.',
+          text: 'Five of these eight NOTAMs changed the plan, and each one passed all four questions. The three that didn\'t each failed at least one: the wrong kind of flight, or the wrong place.',
         },
       },
     ],

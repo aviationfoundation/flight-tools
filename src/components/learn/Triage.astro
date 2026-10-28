@@ -18,6 +18,13 @@ const { block } = Astro.props;
     ))}
   </dl>
 
+  {block.map && (
+    <figure class="tr-map-wrap">
+      <div class="tr-map" data-tr-map={JSON.stringify(block.map)} aria-label="Map of the route from Abbotsford to Victoria, with the areas from the NOTAMs below drawn on it"></div>
+      <figcaption class="tr-map-caption">Your route, with the areas from these NOTAMs drawn the way a briefing app would show them.</figcaption>
+    </figure>
+  )}
+
   <ol class="tr-list">
     {block.items.map((item, i) => (
       <li class="tr-item" data-item={i} data-affects={item.affects ? '1' : '0'}>
@@ -63,6 +70,16 @@ const { block } = Astro.props;
   }
   .tr-flight dt { font-size: 12px; color: var(--text-muted); }
   .tr-flight dd { margin: 3px 0 0; font-size: 14.5px; font-weight: 600; line-height: 1.4; }
+
+  .tr-map-wrap { margin: 0 0 28px; }
+
+  .tr-map {
+    height: 340px;
+    background: var(--surface-subtle);
+    border: 1px solid var(--border);
+  }
+
+  .tr-map-caption { margin-top: 8px; font-size: 13px; color: var(--text-muted); }
 
   .tr-list {
     list-style: none;

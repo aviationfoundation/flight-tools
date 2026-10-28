@@ -1,0 +1,104 @@
+---
+interface Props {
+  caption: string;
+  window: [number, number];
+  offsetHours: number;
+  localLabel: string;
+}
+
+const { caption, window, offsetHours, localLabel } = Astro.props;
+
+function segments(start: number, end: number): Array<[number, number]> {
+  const s = ((start % 24) + 24) % 24;
+  const e = ((end % 24) + 24) % 24;
+  if (s < e) return [[s, e]];
+  return [[s, 24], [0, e]].filter(([a, b]) => b > a) as Array<[number, number]>;
+}
+
+const clock = (hour: number) => `${String(((hour % 24) + 24) % 24).padStart(2, '0')}:00`;
+const rows = [
+  { label: 'UTC', parts: segments(window[0], window[1]), text: `${clock(window[0])} to ${clock(window[1])}` },
+  { label: localLabel, parts: segments(window[0] + offsetHours, window[1] + offsetHours), text: `${clock(window[0] + offsetHours)} to ${clock(window[1] + offsetHours)}` },
+];
+const ticks = [0, 6, 12, 18, 24];
+---
+
+<figure class="tl">
+  {rows.map((row) => (
+    <div class="tl-row">
+      <div class="tl-label">
+        <span class="tl-name">{row.label}</span>
+        <span class="tl-span num">{row.text}</span>
+      </div>
+      <div class="tl-track" role="img" aria-label={`${row.label}: closed ${row.text}`}>
+        {row.parts.map(([a, b]) => (
+          <span class="tl-on" style={`left:${(a / 24) * 100}%;width:${((b - a) / 24) * 100}%`}></span>
+        ))}
+        {ticks.map((t) => (
+          <span class="tl-tick num" style={`left:${(t / 24) * 100}%`} aria-hidden="true">{String(t).padStart(2, '0')}</span>
+        ))}
+      </div>
+    </div>
+  ))}
+  <figcaption class="tl-caption">{caption}</figcaption>
+</figure>
+
+<style>
+  .tl {
+    margin: 28px 0 32px;
+    padding: 18px 20px 14px;
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    font-family: var(--font-sans);
+    display: grid;
+    gap: 26px;
+  }
+
+  .tl-row {
+    display: grid;
+    grid-template-columns: 150px minmax(0, 1fr);
+    gap: 16px;
+    align-items: center;
+  }
+
+  .tl-label { display: grid; gap: 2px; }
+  .tl-name { font-size: 13px; font-weight: 700; }
+  .tl-span { font-size: 12.5px; color: var(--text-muted); }
+
+  .tl-track {
+    position: relative;
+    height: 22px;
+    background: repeating-linear-gradient(90deg, var(--border) 0 1px, transparent 1px calc(100% / 24));
+    border: 1px solid var(--border);
+  }
+
+  .tl-on {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: var(--danger);
+    opacity: 0.85;
+  }
+
+  .tl-tick {
+    position: absolute;
+    top: 100%;
+    margin-top: 3px;
+    transform: translateX(-50%);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .tl-tick:first-of-type { transform: none; }
+  .tl-tick:last-of-type { transform: translateX(-100%); }
+
+  .tl-caption {
+    margin-top: 2px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  @media (max-width: 600px) {
+    .tl-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  }
+</style>

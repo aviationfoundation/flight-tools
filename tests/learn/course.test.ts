@@ -70,6 +70,15 @@ test('every choice question has exactly one right answer and explains every opti
   }
 });
 
+test('the right answer is not usually the longest option', () => {
+  const choices = of('choice').map(({ block }) => block).filter((b) => b.options.length > 2);
+  const longest = choices.filter((b) => {
+    const right = b.options.find((o) => o.correct)!.text.length;
+    return b.options.every((o) => o.correct || o.text.length < right);
+  });
+  assert.ok(longest.length <= Math.floor(choices.length / 3), `${longest.length} of ${choices.length}: ${longest.map((b) => b.id).join(', ')}`);
+});
+
 test('typed answers normalise to something', () => {
   for (const { block } of of('answer')) {
     for (const accept of block.accept) assert.ok(normaliseAnswer(accept).length > 0);
@@ -148,8 +157,8 @@ test('the schedule answers agree with the dates', () => {
 test('the briefing drill times agree with each answer', () => {
   const triage = of('triage')[0].block;
   const find = (id: string) => triage.items.find((i) => i.raw.startsWith(id))!.raw;
+  assert.equal(triage.items.some((i) => i.raw.startsWith('A2202/26')), false);
   assert.equal(activeAt(find('A2201/26'), '2026-10-29T15:50:00Z'), true);
-  assert.equal(activeAt(find('A2202/26'), '2026-10-29T16:00:00Z'), false);
   assert.equal(activeAt(find('A2208/26'), '2026-10-29T16:00:00Z'), true);
   assert.equal(activeAt(find('A2204/26'), '2026-10-29T16:40:00Z'), true);
   assert.equal(activeAt(find('A2205/26'), '2026-10-29T16:40:00Z'), true);
@@ -157,7 +166,32 @@ test('the briefing drill times agree with each answer', () => {
   assert.equal(decodeNotam(find('A2203/26')).qLine?.traffic, 'I');
   assert.equal(decodeNotam(find('A2208/26')).replaces, 'A2202/26');
   assert.equal(decodeNotam(find('A2207/26')).fields.find((f) => f.code === 'A')?.raw, 'CZVR');
+  assert.equal(decodeNotam(find('A2206/26')).fields.find((f) => f.code === 'G')?.raw, '12000FT AMSL');
   assert.equal(triage.items.filter((i) => i.affects).length, 5);
+  assert.match(triage.debrief!.text, /Five of these eight/);
+  assert.equal(triage.items.length, 8);
+});
+
+test('the drill map draws each area where its NOTAM puts it', () => {
+  const triage = of('triage')[0].block;
+  for (const area of triage.map!.areas) {
+    const raw = triage.items.find((i) => i.raw.startsWith(area.label))!.raw;
+    const point = decodeNotam(raw).textCoordinates[0];
+    assert.ok(Math.abs(point.lat - area.lat) < 0.01 && Math.abs(point.lon - area.lon) < 0.01, area.label);
+    const radius = Number(/WI (\d+)NM/.exec(raw)![1]);
+    assert.equal(radius, area.radiusNm, area.label);
+  }
+});
+
+test('a NOTAM with a D) schedule ends C) at the end of its last period', () => {
+  for (const { lesson, raw } of lessonRaws()) {
+    if (!/^(?:[A-Z]\d{4}\/\d{2} NOTAM)/.test(raw)) continue;
+    const d = decodeNotam(raw);
+    const schedule = d.fields.find((f) => f.code === 'D')?.raw;
+    const window = schedule ? /DAILY \d{4}-(\d{2})(\d{2})/.exec(schedule) : null;
+    if (!window || !d.effectiveTo) continue;
+    assert.deepEqual([d.effectiveTo.hour, d.effectiveTo.minute], [Number(window[1]), Number(window[2])], `${lesson}: ${raw.split('\n')[0]}`);
+  }
 });
 
 test('course copy avoids em dashes and doubled spaces', () => {

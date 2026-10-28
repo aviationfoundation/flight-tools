@@ -5,6 +5,7 @@ import Layout from '../../layouts/Layout.astro';
 import NotamFigure from '../../components/learn/NotamFigure.astro';
 import Check from '../../components/learn/Check.astro';
 import Triage from '../../components/learn/Triage.astro';
+import Timeline from '../../components/learn/Timeline.astro';
 import LessonRail from '../../components/learn/LessonRail.astro';
 import SignInGate from '../../components/learn/SignInGate.astro';
 import { COURSE_ID, LESSONS, checkCount, lessonById } from '../../lib/learn/course';
@@ -38,7 +39,7 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
   {!lesson ? (
     <div class="lp-missing container-site px-site">
       <h1 class="lp-title">There's no lesson at this address</h1>
-      <p class="lp-summary"><a href="/learn">See all ten lessons</a>.</p>
+      <p class="lp-summary"><a href="/learn">See all the lessons</a>.</p>
     </div>
   ) : (
     <div class="lp container-site px-site">
@@ -86,6 +87,8 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
                     <p class="lp-rule-title">{block.title}</p>
                     <p class="lp-rule-text">{block.text}</p>
                   </aside>
+                ) : block.kind === 'timeline' ? (
+                  <Timeline caption={block.caption} window={block.window} offsetHours={block.offsetHours} localLabel={block.localLabel} />
                 ) : block.kind === 'triage' ? (
                   <Triage block={block} />
                 ) : (
@@ -442,6 +445,84 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
         check.classList.add('is-done');
         maybeFinish();
       });
+    });
+
+    article.querySelectorAll<HTMLElement>('[data-tr-map]').forEach((el) => {
+      const draw = async () => {
+        const data = JSON.parse(el.dataset.trMap!) as {
+          route: Array<[number, number]>;
+          places: Array<{ label: string; lat: number; lon: number }>;
+          areas: Array<{ label: string; lat: number; lon: number; radiusNm: number }>;
+        };
+        const { createMap, cssColor } = await import('../../lib/map-client');
+        const accent = cssColor(document.documentElement, '--accent-blue') || '#00396E';
+        const danger = cssColor(document.documentElement, '--danger') || '#B42318';
+        const ink = cssColor(document.documentElement, '--fg') || '#111111';
+        const circle = (lat: number, lon: number, nm: number) => {
+          const ring: Array<[number, number]> = [];
+          for (let i = 0; i <= 64; i++) {
+            const a = (i / 64) * Math.PI * 2;
+            ring.push([lon + (Math.sin(a) * nm) / (60 * Math.cos((lat * Math.PI) / 180)), lat + (Math.cos(a) * nm) / 60]);
+          }
+          return ring;
+        };
+        const lons = [...data.places.map((p) => p.lon), ...data.areas.map((a) => a.lon)];
+        const lats = [...data.places.map((p) => p.lat), ...data.areas.map((a) => a.lat)];
+        try {
+          await createMap(el, { bounds: [[Math.min(...lons) - 0.1, Math.min(...lats) - 0.08], [Math.max(...lons) + 0.1, Math.max(...lats) + 0.08]], maxZoom: 10 }, (map) => {
+            if (map.getSource('drill-route')) return;
+            map.addSource('drill-areas', {
+              type: 'geojson',
+              data: { type: 'FeatureCollection', features: data.areas.map((a) => ({ type: 'Feature', properties: { label: a.label }, geometry: { type: 'Polygon', coordinates: [circle(a.lat, a.lon, a.radiusNm)] } })) },
+            });
+            map.addLayer({ id: 'drill-areas-fill', type: 'fill', source: 'drill-areas', paint: { 'fill-color': danger, 'fill-opacity': 0.16 } });
+            map.addLayer({ id: 'drill-areas-line', type: 'line', source: 'drill-areas', paint: { 'line-color': danger, 'line-width': 1.5 } });
+            map.addSource('drill-route', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: data.route.map(([lat, lon]) => [lon, lat]) } } });
+            map.addLayer({ id: 'drill-route', type: 'line', source: 'drill-route', paint: { 'line-color': accent, 'line-width': 3 } });
+            map.addSource('drill-labels', {
+              type: 'geojson',
+              data: {
+                type: 'FeatureCollection',
+                features: [
+                  ...data.places.map((p) => ({ type: 'Feature' as const, properties: { label: p.label, kind: 'place' }, geometry: { type: 'Point' as const, coordinates: [p.lon, p.lat] } })),
+                  ...data.areas.map((a) => ({ type: 'Feature' as const, properties: { label: a.label, kind: 'area' }, geometry: { type: 'Point' as const, coordinates: [a.lon, a.lat] } })),
+                ],
+              },
+            });
+            map.addLayer({ id: 'drill-places', type: 'circle', source: 'drill-labels', filter: ['==', ['get', 'kind'], 'place'], paint: { 'circle-radius': 4.5, 'circle-color': ink, 'circle-stroke-width': 2, 'circle-stroke-color': '#FFFFFF' } });
+            const halo = cssColor(document.documentElement, '--bg') || '#FFFFFF';
+            map.addLayer({
+              id: 'drill-place-text',
+              type: 'symbol',
+              source: 'drill-labels',
+              filter: ['==', ['get', 'kind'], 'place'],
+              layout: { 'text-field': ['get', 'label'], 'text-size': 12, 'text-offset': [0, 1.1], 'text-anchor': 'top', 'text-font': ['Noto Sans Bold'], 'text-allow-overlap': true },
+              paint: { 'text-color': ink, 'text-halo-color': halo, 'text-halo-width': 1.6 },
+            });
+            map.addLayer({
+              id: 'drill-area-text',
+              type: 'symbol',
+              source: 'drill-labels',
+              filter: ['==', ['get', 'kind'], 'area'],
+              layout: { 'text-field': ['get', 'label'], 'text-size': 12, 'text-offset': [1.4, -0.9], 'text-anchor': 'left', 'text-font': ['Noto Sans Bold'], 'text-allow-overlap': true },
+              paint: { 'text-color': danger, 'text-halo-color': halo, 'text-halo-width': 1.6 },
+            });
+          });
+        } catch {
+          el.closest('figure')?.setAttribute('hidden', '');
+        }
+      };
+      if (!('IntersectionObserver' in window)) {
+        draw();
+        return;
+      }
+      const observer = new IntersectionObserver((entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          observer.disconnect();
+          draw();
+        }
+      }, { rootMargin: '200px' });
+      observer.observe(el);
     });
 
     article.querySelectorAll<HTMLElement>('[data-nf]').forEach((figure) => {

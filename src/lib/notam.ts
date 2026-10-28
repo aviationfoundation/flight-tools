@@ -447,6 +447,7 @@ export const WORDS: Record<string, string> = {
   DISPL: 'displaced',
   DIST: 'distance',
   DLY: 'daily',
+  DTHR: 'displaced threshold',
   EQPT: 'equipment',
   ELEV: 'elevation',
   EST: 'estimated',
@@ -463,6 +464,7 @@ export const WORDS: Record<string, string> = {
   GRVL: 'gravel',
   HEL: 'helicopter',
   HGT: 'height',
+  HIRL: 'high intensity runway lights',
   HJ: 'sunrise to sunset',
   HN: 'sunset to sunrise',
   HOL: 'holidays',
@@ -488,6 +490,7 @@ export const WORDS: Record<string, string> = {
   MALSR: 'medium intensity approach lighting system with runway alignment indicator lights',
   MAX: 'maximum',
   MIL: 'military',
+  MIRL: 'medium intensity runway lights',
   MNM: 'minimum',
   MNT: 'monitor',
   MSL: 'mean sea level',
@@ -496,6 +499,7 @@ export const WORDS: Record<string, string> = {
   NE: 'northeast',
   NML: 'normal',
   NW: 'northwest',
+  OBS: 'observed',
   OBSC: 'obscured',
   OBST: 'obstacle',
   OBSTN: 'obstruction',
@@ -505,6 +509,7 @@ export const WORDS: Record<string, string> = {
   OPS: 'operations',
   PAR: 'precision approach radar',
   PAX: 'passengers',
+  PCT: 'percent',
   PERM: 'permanent',
   PJE: 'parachute jumping exercise',
   PN: 'prior notice',
@@ -512,6 +517,7 @@ export const WORDS: Record<string, string> = {
   PROC: 'procedure',
   PROCS: 'procedures',
   PSN: 'position',
+  RCLL: 'runway centre line lights',
   RFFS: 'rescue and fire fighting service',
   REDL: 'runway edge lights',
   REIL: 'runway end identifier lights',
@@ -526,6 +532,7 @@ export const WORDS: Record<string, string> = {
   SER: 'service',
   SFC: 'surface',
   SKED: 'schedule',
+  SN: 'snow',
   SR: 'sunrise',
   SS: 'sunset',
   STN: 'station',
@@ -631,14 +638,23 @@ export function expandWithReport(text: string, keep: Iterable<string> = []): Exp
     .replace(/\b(\d+)\s?(HRS?)\b/g, (_, n: string) => plural(n, 'hour', 'hours'))
     .replace(/\b(\d+)\s?(MINS?)\b/g, (_, n: string) => plural(n, 'minute', 'minutes'))
     .replace(/\b(\d+(?:\.\d+)?)\s?NM\b/g, '$1 NM')
+    .replace(/\b(\d+(?:\/\d+)?)IN\b/g, '$1 in')
     .replace(/\b(\d+)\s?FT\b/g, (_, n: string) => `${groupThousands(n)} ft`)
     .replace(/\b(\d+(?:\.\d+)?)\s?M\b(?!\s?(?:HZ|IN)\b)/g, '$1 m');
 
   const tokens = [...out.matchAll(/\b[A-Z][A-Z0-9']*\b/g)];
   const adjacent = (i: number, j: number) => {
-    const [first, second] = i < j ? [tokens[i], tokens[j]] : [tokens[j], tokens[i]];
+    const first = tokens[Math.min(i, j)];
+    const second = tokens[Math.max(i, j)];
     if (!first || !second) return false;
-    return /^[ /]+$/.test(out.slice(first.index! + first[0].length, second.index!));
+    const from = first.index! + first[0].length;
+    const to = second.index!;
+    if (to <= from) return false;
+    for (let k = from; k < to; k++) {
+      const c = out.charCodeAt(k);
+      if (c !== 32 && c !== 47) return false;
+    }
+    return true;
   };
   let result = '';
   let last = 0;
@@ -1132,7 +1148,8 @@ function decodeLineFormat(raw: string, display: string, parse: string, format: '
     fields.push({ code: 'B', raw: timing.fromRaw, plain: describeField('B', timing.fromRaw) });
     if (timing.toRaw) fields.push({ code: 'C', raw: timing.toRaw, plain: describeField('C', timing.toRaw) });
   }
-  fields.push({ code: 'E', raw: displayBody, plain: expandContractions(englishUpper, keep) });
+  const eReport = expandWithReport(englishUpper, keep);
+  fields.push({ code: 'E', raw: displayBody, plain: eReport.text });
   fields.sort((a, b) => FIELD_ORDER.indexOf(a.code) - FIELD_ORDER.indexOf(b.code));
 
   const badOrder = issues.some((i) => i.code === 'time-order');
@@ -1155,7 +1172,7 @@ function decodeLineFormat(raw: string, display: string, parse: string, format: '
       permanent: timing?.permanent ?? false, estimatedEnd: timing?.estimated ?? false,
       untilFurtherNotice: timing?.untilFurtherNotice ?? false, badOrder, unstructured: false,
     }),
-    unrecognisedTokens: expandWithReport(englishUpper, keep).unrecognised,
+    unrecognisedTokens: eReport.unrecognised,
     unstructured: false,
     headline: null,
     statements: buildStatements(fields.find((f) => f.code === 'E')?.plain ?? ''),
@@ -1255,17 +1272,26 @@ export function decodeNotam(input: string): DecodedNotam {
 
   const fields: DecodedField[] = [];
   const uppers = new Map<string, string>();
+  let eReport: ExpansionResult | null = null;
   for (const item of items) {
     if (item.code === 'Q' || !item.value) continue;
     uppers.set(item.code, item.upper);
-    fields.push({ code: item.code, raw: item.value, plain: describeField(item.code, item.upper, keep) });
+    if (item.code === 'E') {
+      eReport = expandWithReport(item.upper, keep);
+      fields.push({ code: 'E', raw: item.value, plain: eReport.text });
+    } else {
+      fields.push({ code: item.code, raw: item.value, plain: describeField(item.code, item.upper, keep) });
+    }
   }
   fields.sort((a, b) => FIELD_ORDER.indexOf(a.code) - FIELD_ORDER.indexOf(b.code));
 
   const bodyUpper = parse.slice(bodyStart).replace(/\s+/g, ' ').trim();
   if (unstructured) {
     const bodyDisplay = display.slice(bodyStart).replace(/\s+/g, ' ').trim();
-    if (bodyDisplay) fields.push({ code: 'E', raw: bodyDisplay, plain: expandContractions(bodyUpper, keep) });
+    if (bodyDisplay) {
+      eReport = expandWithReport(bodyUpper, keep);
+      fields.push({ code: 'E', raw: bodyDisplay, plain: eReport.text });
+    }
   }
 
   const has = (code: DecodedField['code']) => fields.some((f) => f.code === code);
@@ -1356,7 +1382,7 @@ export function decodeNotam(input: string): DecodedNotam {
   }
 
   const eText = e ?? (unstructured ? bodyUpper : '');
-  const unrecognisedTokens = eText ? expandWithReport(eText, keep).unrecognised : [];
+  const unrecognisedTokens = eReport ? eReport.unrecognised : eText ? expandWithReport(eText, keep).unrecognised : [];
   const textCoordinates = eText ? findTextCoordinates(eText) : [];
   const plainSummary = buildPlainSummary({
     type, replaces, qLine, fields, effectiveFrom, effectiveTo: badOrder ? null : effectiveTo,
