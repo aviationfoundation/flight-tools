@@ -1,0 +1,19 @@
+{
+  "name": "flight-tools",
+  "version": "1.0.0",
+  "description": "Free flight-planning tools: METAR/TAF decoder, NOTAM decoder, E6B, weight and balance, takeoff and landing distance, AD decoder.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "start": "node dist/server/entry.mjs",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "@astrojs/node": "^9.0.0",
+    "astro": "^5.18.2",
+    "typescript": "^5.9.3",
+    "zod": "^4.3.6"
+  }
+}
