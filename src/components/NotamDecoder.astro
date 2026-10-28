@@ -75,14 +75,26 @@ const headline = decoded.qLine?.subjectPlain
   ? `${decoded.qLine.subjectPlain}${decoded.qLine.conditionPlain ? `: ${decoded.qLine.conditionPlain.charAt(0).toLowerCase()}${decoded.qLine.conditionPlain.slice(1)}` : ''}`
   : null;
 
-const coordMatch = decoded.qLine?.coordinates ? /^(\d{2})(\d{2})([NS])(\d{3})(\d{2})([EW])$/.exec(decoded.qLine.coordinates) : null;
-const area = coordMatch
-  ? {
-      lat: (Number(coordMatch[1]) + Number(coordMatch[2]) / 60) * (coordMatch[3] === 'S' ? -1 : 1),
-      lon: (Number(coordMatch[4]) + Number(coordMatch[5]) / 60) * (coordMatch[6] === 'W' ? -1 : 1),
-      radiusNm: decoded.qLine?.radiusNm ?? null,
-    }
-  : null;
+const centre = decoded.qLine?.center ?? null;
+const wholeArea = (decoded.qLine?.radiusNm ?? 0) >= 999;
+const area = centre
+  ? { lat: centre.lat, lon: centre.lon, radiusNm: wholeArea ? null : decoded.qLine?.radiusNm ?? null }
+  : decoded.textCoordinates.length
+    ? { lat: decoded.textCoordinates[0].lat, lon: decoded.textCoordinates[0].lon, radiusNm: null }
+    : null;
+const points = decoded.textCoordinates.map((p) => [p.lon, p.lat]);
+const areaNote = centre
+  ? `${decoded.qLine?.coordinates}${wholeArea ? ', the whole FIR' : decoded.qLine?.radiusNm != null ? `, ${decoded.qLine.radiusNm} nm radius` : ''}`
+  : 'Position from the text';
+
+function flLabel(fl: string): string {
+  if (fl === '000') return 'surface';
+  if (fl === '999') return 'unlimited';
+  return `FL${fl}`;
+}
+
+const errors = decoded.issues.filter((i) => i.severity === 'error');
+const warnings = decoded.issues.filter((i) => i.severity === 'warning');
 
 const FIELD_ORDER = ['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const;
 const orderedFields = FIELD_ORDER.map((code) => decoded.fields.find((f) => f.code === code)).filter((f): f is NonNullable<typeof f> => !!f);
@@ -95,7 +107,7 @@ const qRows = decoded.qLine
       { label: 'Traffic', value: decoded.qLine.traffic, plain: decoded.qLine.trafficPlain },
       { label: 'Purpose', value: decoded.qLine.purpose, plain: decoded.qLine.purposePlain },
       { label: 'Scope', value: decoded.qLine.scope, plain: decoded.qLine.scopePlain },
-      { label: 'Altitude block', value: decoded.qLine.lowerFl && decoded.qLine.upperFl ? `FL${decoded.qLine.lowerFl}–FL${decoded.qLine.upperFl}` : null, plain: null },
+      { label: 'Altitude block', value: decoded.qLine.lowerFl && decoded.qLine.upperFl ? `${decoded.qLine.lowerFl}/${decoded.qLine.upperFl}` : null, plain: decoded.qLine.lowerFl && decoded.qLine.upperFl && /^\d{3}$/.test(decoded.qLine.lowerFl) && /^\d{3}$/.test(decoded.qLine.upperFl) ? `From ${flLabel(decoded.qLine.lowerFl)} to ${flLabel(decoded.qLine.upperFl)}` : null },
       { label: 'Centre / radius', value: decoded.qLine.coordinates ? `${decoded.qLine.coordinates}${decoded.qLine.radiusNm != null ? `, ${decoded.qLine.radiusNm} nm radius` : ''}` : null, plain: null },
     ].filter((r) => r.value != null)
   : [];
@@ -121,6 +133,23 @@ const qRows = decoded.qLine
     {headline && <p class="nd-headline-text">{headline}</p>}
     <p class="nd-summary">{decoded.plainSummary}</p>
   </section>
+
+  {decoded.issues.length > 0 && (
+    <section class={`nd-issues${errors.length ? ' has-errors' : ''}`} aria-label="Problems with this NOTAM">
+      <p class="nd-issues-lead">
+        {errors.length
+          ? 'This NOTAM has errors, so parts of the decode may be wrong. Check it against your official briefing.'
+          : 'This NOTAM decoded, but some of it does not follow the ICAO format.'}
+      </p>
+      <ul>
+        {[...errors, ...warnings].map((i) => (
+          <li class={`is-${i.severity}`}>
+            {i.message}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )}
 
   {fromDate && timeline && (
     <section class="nd-when" aria-label="When this NOTAM applies">
@@ -151,9 +180,7 @@ const qRows = decoded.qLine
     <section class="nd-panel">
       <header class="nd-panel-head">
         <span class="col">Where it applies</span>
-        <span class="nd-panel-note num">
-          {decoded.qLine?.coordinates}{area.radiusNm != null ? `, ${area.radiusNm} nm radius` : ''}
-        </span>
+        <span class="nd-panel-note num">{areaNote}</span>
       </header>
       <div
         class="nd-map"
@@ -161,7 +188,9 @@ const qRows = decoded.qLine
         data-lat={area.lat}
         data-lon={area.lon}
         data-radius={area.radiusNm ?? ''}
-        aria-label={`Map of the area this NOTAM covers, centred on ${decoded.qLine?.coordinates}${area.radiusNm != null ? ` with a ${area.radiusNm} nautical mile radius` : ''}`}
+        data-wide={wholeArea ? '1' : ''}
+        data-points={JSON.stringify(points)}
+        aria-label={`Map of the area this NOTAM covers: ${areaNote}`}
       ></div>
     </section>
   )}
@@ -358,6 +387,12 @@ const qRows = decoded.qLine
   .nd-field-plain { margin: 6px 0 0; font-size: 14px; line-height: 1.6; }
   .nd-unstructured-text { margin-top: 0; }
 
+  .nd-issues { margin-top: 18px; padding: 14px 16px; border-left: 3px solid var(--warning); background: var(--warning-bg); font-size: 13.5px; line-height: 1.55; }
+  .nd-issues.has-errors { border-left-color: var(--danger); background: var(--danger-bg); }
+  .nd-issues-lead { margin: 0 0 8px; font-weight: 600; color: var(--fg); }
+  .nd-issues ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+  .nd-issues li { color: var(--text-muted); }
+  .nd-issues li.is-error { color: var(--fg); }
   .nd-flagged { margin-top: 18px; padding: 12px 14px; border-left: 3px solid var(--warning); background: var(--surface-subtle); font-size: 12.5px; line-height: 1.55; color: var(--text-muted); }
   .nd-flagged .num { color: var(--fg); }
 
@@ -373,16 +408,16 @@ const qRows = decoded.qLine
 </style>
 
 <script>
-  async function setupNotamMap() {
-    const el = document.querySelector<HTMLElement>('[data-nd-map]');
-    if (!el || el.dataset.ready) return;
+  async function setupNotamMap(el: HTMLElement) {
+    if (el.dataset.ready) return;
     el.dataset.ready = '1';
     const lat = Number(el.dataset.lat);
     const lon = Number(el.dataset.lon);
     const radiusNm = el.dataset.radius ? Number(el.dataset.radius) : null;
+    const points: Array<[number, number]> = el.dataset.points ? JSON.parse(el.dataset.points) : [];
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
 
-    const reach = Math.max(radiusNm ?? 5, 3);
+    const reach = el.dataset.wide ? 150 : Math.max(radiusNm ?? 5, 3);
     const dLat = reach / 60;
     const dLon = reach / (60 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
     const ring: Array<[number, number]> = [];
@@ -396,7 +431,10 @@ const qRows = decoded.qLine
     const { createMap, cssColor } = await import('../lib/map-client');
     const accent = cssColor(document.documentElement, '--accent-blue') || '#00396E';
     try {
-      await createMap(el, { bounds: [[lon - dLon * 1.3, lat - dLat * 1.3], [lon + dLon * 1.3, lat + dLat * 1.3]], maxZoom: 12 }, (map) => {
+      const lons = [lon - dLon * 1.3, lon + dLon * 1.3, ...points.map((p) => p[0])];
+      const lats = [lat - dLat * 1.3, lat + dLat * 1.3, ...points.map((p) => p[1])];
+      const bounds: [[number, number], [number, number]] = [[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]];
+      await createMap(el, { bounds, maxZoom: 12 }, (map) => {
         if (map.getSource('notam-centre')) return;
         if (ring.length) {
           map.addSource('notam-area', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring] } } });
@@ -405,12 +443,32 @@ const qRows = decoded.qLine
         }
         map.addSource('notam-centre', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [lon, lat] } } });
         map.addLayer({ id: 'notam-centre', type: 'circle', source: 'notam-centre', paint: { 'circle-radius': 5, 'circle-color': accent, 'circle-stroke-width': 2, 'circle-stroke-color': '#FFFFFF' } });
+        if (points.length) {
+          map.addSource('notam-points', { type: 'geojson', data: { type: 'FeatureCollection', features: points.map((coordinates) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates } })) } });
+          map.addLayer({ id: 'notam-points', type: 'circle', source: 'notam-points', paint: { 'circle-radius': 4, 'circle-color': '#FFFFFF', 'circle-stroke-width': 2.5, 'circle-stroke-color': accent } });
+        }
       });
     } catch {
       el.closest('section')?.setAttribute('hidden', '');
     }
   }
 
-  setupNotamMap();
-  document.addEventListener('astro:after-swap', setupNotamMap);
+  function setupAll() {
+    const maps = document.querySelectorAll<HTMLElement>('[data-nd-map]');
+    if (!('IntersectionObserver' in window)) {
+      maps.forEach((el) => setupNotamMap(el));
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        observer.unobserve(entry.target);
+        setupNotamMap(entry.target as HTMLElement);
+      }
+    }, { rootMargin: '300px' });
+    maps.forEach((el) => observer.observe(el));
+  }
+
+  setupAll();
+  document.addEventListener('astro:after-swap', setupAll);
 </script>

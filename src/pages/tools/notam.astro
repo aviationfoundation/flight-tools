@@ -3,16 +3,35 @@ export const prerender = false;
 
 import Layout from '../../layouts/Layout.astro';
 import NotamDecoder from '../../components/NotamDecoder.astro';
-import { decodeNotam, type DecodedNotam } from '../../lib/notam';
+import { decodeNotam, decodeNotams, type DecodedNotam } from '../../lib/notam';
 
+const MAX_PASTE = 200000;
 const params = Astro.url.searchParams;
-const rawParam = (params.get('raw') ?? '').trim();
+let rawParam = (params.get('raw') ?? '').trim();
+if (Astro.request.method === 'POST') {
+  try {
+    const form = await Astro.request.formData();
+    rawParam = String(form.get('raw') ?? '').trim();
+  } catch {
+    rawParam = '';
+  }
+}
 
-let decoded: DecodedNotam | null = null;
 let errorMessage: string | null = null;
+if (rawParam.length > MAX_PASTE) {
+  errorMessage = `That paste is ${Math.round(rawParam.length / 1000)} KB. Paste up to ${MAX_PASTE / 1000} KB at a time.`;
+  rawParam = '';
+}
 
-if (rawParam) {
-  decoded = decodeNotam(rawParam);
+const decodedList: DecodedNotam[] = rawParam ? decodeNotams(rawParam) : [];
+const decoded: DecodedNotam | null = decodedList[0] ?? null;
+const many = decodedList.length > 1;
+const errorCount = decodedList.filter((d) => d.issues.some((i) => i.severity === 'error')).length;
+
+function listLabel(d: DecodedNotam): string {
+  const id = d.series && d.number ? `${d.series}${d.number}` : d.number ?? '';
+  const where = d.fields.find((f) => f.code === 'A')?.raw ?? '';
+  return [id, where].filter(Boolean).join(' ');
 }
 
 function notamTime(date: Date): string {
@@ -69,8 +88,8 @@ const exampleCards = examples.map((example) => {
     </header>
 
     <section class="nt-console" aria-label="Paste a NOTAM">
-      <form method="get" action="/tools/notam" class="nt-paste-form">
-        <label class="col" for="nt-raw">Raw NOTAM text</label>
+      <form method="get" action="/tools/notam" class="nt-paste-form" data-nt-form>
+        <label class="col" for="nt-raw">Raw NOTAM text, one or many</label>
         <textarea
           id="nt-raw"
           name="raw"
@@ -81,8 +100,8 @@ const exampleCards = examples.map((example) => {
         >{rawParam}</textarea>
         <div class="nt-paste-actions">
           <p class="nt-paste-help">
-            Paste the whole NOTAM, including the Q) line and the lettered items. US domestic NOTAMs
-            without them are decoded as plain text.
+            Paste whole NOTAMs, including the Q) line and the lettered items. A briefing with many
+            NOTAMs is split and each one decoded. US domestic and NAV CANADA short-form NOTAMs work too.
           </p>
           <button type="submit" class="btn-solid">Decode</button>
         </div>
@@ -100,8 +119,27 @@ const exampleCards = examples.map((example) => {
 
     {errorMessage && <div class="form-alert nt-alert" data-tone="warning" role="status">{errorMessage}</div>}
 
+    {many && (
+      <nav class="nt-list" aria-label="NOTAMs in this paste">
+        <p class="nt-list-lead">
+          {decodedList.length} NOTAMs in this paste{errorCount ? `, ${errorCount} with errors` : ''}.
+        </p>
+        <ol>
+          {decodedList.map((d, i) => (
+            <li class={d.issues.some((x) => x.severity === 'error') ? 'has-error' : d.issues.length ? 'has-warning' : ''}>
+              <a href={`#notam-${i + 1}`} class="num">{listLabel(d) || `NOTAM ${i + 1}`}</a>
+            </li>
+          ))}
+        </ol>
+      </nav>
+    )}
+
     {decoded ? (
-      <NotamDecoder decoded={decoded} />
+      decodedList.map((d, i) => (
+        <div id={`notam-${i + 1}`} class="nt-item">
+          <NotamDecoder decoded={d} />
+        </div>
+      ))
     ) : (
       !errorMessage && (
         <section class="nt-intro" aria-labelledby="nt-examples-title">
@@ -172,8 +210,26 @@ const exampleCards = examples.map((example) => {
   .nt-intro-note { margin: 16px 0 0; font-size: 12.5px; color: var(--text-muted); max-width: 70ch; }
   @media (max-width: 860px) { .nt-cards { grid-template-columns: minmax(0, 1fr); } }
 
+  .nt-list { margin-top: 36px; padding: 16px 18px; border: 1px solid var(--border); background: var(--surface-card); }
+  .nt-list-lead { margin: 0 0 10px; font-size: 14px; font-weight: 600; }
+  .nt-list ol { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .nt-list a { font-size: 13px; color: var(--fg); text-decoration: none; border-bottom: 2px solid var(--border); }
+  .nt-list li.has-warning a { border-bottom-color: var(--warning); }
+  .nt-list li.has-error a { border-bottom-color: var(--danger); }
+  .nt-list a:hover { border-bottom-color: var(--fg); }
+  .nt-item { scroll-margin-top: 16px; }
+  .nt-item + .nt-item { margin-top: 72px; padding-top: 8px; border-top: 1px solid var(--border-strong); }
+
   @media (max-width: 640px) {
     .nt-paste-actions { flex-direction: column; align-items: stretch; }
     .nt-paste-actions .btn-solid { width: 100%; }
   }
 </style>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>('[data-nt-form]');
+  form?.addEventListener('submit', () => {
+    const field = form.querySelector<HTMLTextAreaElement>('textarea[name="raw"]');
+    if (field && field.value.length > 1500) form.method = 'post';
+  });
+</script>

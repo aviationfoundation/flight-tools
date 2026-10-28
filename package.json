@@ -8,7 +8,8 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro build && astro preview",
-    "deploy": "astro build && wrangler deploy"
+    "deploy": "astro build && wrangler deploy",
+    "test": "node --test tests/"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.4.2",
