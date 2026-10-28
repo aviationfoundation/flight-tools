@@ -105,7 +105,7 @@ export interface NotamTime {
   minute: number;
 }
 
-const SUBJECT_CODES: Record<string, string> = {
+export const SUBJECT_CODES: Record<string, string> = {
   AA: 'Minimum altitude',
   AC: 'Control zone',
   AD: 'Air defence identification zone',
@@ -289,7 +289,7 @@ const SUBJECT_CODES: Record<string, string> = {
   XX: 'Other information',
 };
 
-const CONDITION_CODES: Record<string, string> = {
+export const CONDITION_CODES: Record<string, string> = {
   AC: 'Withdrawn for maintenance',
   AD: 'Available for daylight operation',
   AF: 'Flight checked and found reliable',
@@ -391,7 +391,7 @@ const SCOPE_CODES: Record<string, string> = {
   K: 'checklist',
 };
 
-const WORDS: Record<string, string> = {
+export const WORDS: Record<string, string> = {
   ABN: 'aerodrome beacon',
   ABT: 'about',
   ABV: 'above',
@@ -1349,9 +1349,9 @@ export function decodeNotam(input: string): DecodedNotam {
     const saysClosed = CLOSED_WORDS.test(plainE);
     const saysOpen = OPEN_WORDS.test(plainE);
     if (CLOSED_CONDITIONS.has(qLine.conditionCode) && saysOpen && !saysClosed) {
-      issue('warning', 'text-contradiction', 'E', `The Q-code says ${(qLine.conditionPlain ?? '').toLowerCase()}, but the E) text only says it is open or available.`);
+      issue('warning', 'text-contradiction', 'E', `The Q-code says ${(qLine.conditionPlain ?? '').toLowerCase()}, but the E) text only says it is open or available. One of them is wrong: plan for it being ${(qLine.conditionPlain ?? 'closed').toLowerCase()} and confirm with flight services or the airport.`);
     } else if (OPEN_CONDITIONS.has(qLine.conditionCode) && saysClosed && !saysOpen) {
-      issue('warning', 'text-contradiction', 'E', `The Q-code says ${(qLine.conditionPlain ?? '').toLowerCase()}, but the E) text says closed or unserviceable.`);
+      issue('warning', 'text-contradiction', 'E', `The Q-code says ${(qLine.conditionPlain ?? '').toLowerCase()}, but the E) text says closed or unserviceable. One of them is wrong: plan for the text and confirm with flight services or the airport.`);
     }
   }
 

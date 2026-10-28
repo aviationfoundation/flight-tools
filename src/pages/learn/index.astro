@@ -1,0 +1,235 @@
+---
+export const prerender = false;
+
+import Layout from '../../layouts/Layout.astro';
+import NotamFigure from '../../components/learn/NotamFigure.astro';
+import { COURSE_ID, LESSONS } from '../../lib/learn/course';
+import { getAccount, getProgress, signInUrl, type LessonProgress } from '../../lib/accounts';
+
+Astro.response.headers.set('Cache-Control', 'private, no-store');
+
+const state = await getAccount(Astro.request);
+const progress: LessonProgress[] = state.status === 'signed-in' ? (await getProgress(state.token, COURSE_ID)) ?? [] : [];
+const done = new Map(progress.map((p) => [p.lesson, p]));
+const finished = LESSONS.filter((l) => done.has(l.id)).length;
+const nextLesson = LESSONS.find((l) => !done.has(l.id));
+const totalMinutes = LESSONS.reduce((sum, l) => sum + l.minutes, 0);
+
+const showcase = LESSONS[0].blocks.find((b) => b.kind === 'notam');
+---
+
+<Layout
+  title="Reading NOTAMs · a free course from aviation.foundation"
+  description="Ten short lessons on reading NOTAMs: the header, the Q-line, times and schedules, the text, altitudes, the US domestic format, and briefing a flight."
+  currentPath="/learn"
+>
+  <div class="lo container-site px-site">
+    <header class="lo-hero">
+      <div class="lo-intro">
+        <h1 class="lo-title">Reading NOTAMs</h1>
+        <p class="lo-lead">
+          Ten short lessons on the notices in your preflight briefing: what each line means, how the times
+          work, and how to pick out the few NOTAMs that change your flight from the many that don't.
+        </p>
+        <p class="lo-who">
+          Written for student and private pilots. If you know what a runway number and VFR are, you know
+          enough to start. All ten lessons take about an hour, and each one ends with questions that
+          explain every answer.
+        </p>
+
+        <div class="lo-account">
+          {state.status === 'signed-in' ? (
+            <>
+              <p class="lo-account-line">
+                Signed in as <strong>{state.account.name}</strong>. {finished === 0 ? 'No lessons finished yet.' : `${finished} of ${LESSONS.length} lessons finished.`}
+              </p>
+              {nextLesson ? (
+                <a class="btn-solid" href={`/learn/${nextLesson.id}`}>
+                  {finished === 0 ? 'Start the first lesson' : `Continue with lesson ${LESSONS.indexOf(nextLesson) + 1}`}
+                </a>
+              ) : (
+                <div class="lo-account-actions">
+                  <a class="btn-solid" href="/tools/notam">Decode a real briefing</a>
+                  <a class="btn-outline" href={`/learn/${LESSONS[LESSONS.length - 1].id}`}>Brief the practice flight again</a>
+                </div>
+              )}
+            </>
+          ) : state.status === 'unavailable' ? (
+            <p class="lo-account-line">Accounts can't be reached right now, so lessons won't open. Try again in a few minutes.</p>
+          ) : (
+            <>
+              <p class="lo-account-line">
+                Free with an aviation.foundation account. Your scores are saved to it, so you can stop after any
+                lesson and pick up on another device.
+              </p>
+              <div class="lo-account-actions">
+                <a class="btn-solid" href={signInUrl(new URL(`/learn/${LESSONS[0].id}`, Astro.url).href, true)}>Create a free account</a>
+                <a class="btn-outline" href={signInUrl(Astro.url.href)}>Sign in</a>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {showcase && showcase.kind === 'notam' && (
+        <div class="lo-showcase">
+          <p class="lo-showcase-label">From lesson 1: one NOTAM, taken apart</p>
+          <NotamFigure raw={showcase.raw} marks={showcase.marks} id="lo-showcase" />
+        </div>
+      )}
+    </header>
+
+    <section class="lo-lessons" aria-labelledby="lo-lessons-title">
+      <h2 class="lo-section-title" id="lo-lessons-title">The lessons</h2>
+      <ol class="lo-list">
+        {LESSONS.map((lesson, i) => {
+          const record = done.get(lesson.id);
+          return (
+            <li class={record ? 'is-done' : ''}>
+              <a href={`/learn/${lesson.id}`}>
+                <span class="lo-num num" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
+                <span class="lo-body">
+                  <span class="lo-name">{lesson.title}</span>
+                  <span class="lo-summary">{lesson.summary}</span>
+                </span>
+                <span class="lo-meta num">
+                  {record ? `Done, ${record.correct}/${record.total}` : `${lesson.minutes} min`}
+                </span>
+              </a>
+            </li>
+          );
+        })}
+      </ol>
+      <p class="lo-note">
+        About {totalMinutes} minutes in all. Every NOTAM in the course is made up for practice, though the
+        airports are real. Before a real flight, get an official briefing.
+      </p>
+    </section>
+  </div>
+</Layout>
+
+<style>
+  .lo { padding-top: 56px; padding-bottom: 40px; }
+
+  .lo-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+    gap: 64px;
+    align-items: start;
+  }
+
+  .lo-title {
+    margin: 0;
+    font-family: var(--font-archivo);
+    font-size: clamp(40px, 6vw, 72px);
+    font-weight: 700;
+    line-height: 0.98;
+    letter-spacing: -0.02em;
+  }
+
+  .lo-lead {
+    margin: 22px 0 0;
+    font-family: var(--font-serif);
+    font-size: 21px;
+    line-height: 1.55;
+    max-width: 34em;
+  }
+
+  .lo-who {
+    margin: 14px 0 0;
+    font-size: 15.5px;
+    line-height: 1.6;
+    color: var(--text-muted);
+    max-width: 38em;
+  }
+
+  .lo-account {
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    display: grid;
+    gap: 14px;
+    justify-items: start;
+  }
+
+  .lo-account-line { margin: 0; font-size: 15px; line-height: 1.55; max-width: 40em; }
+  .lo-account-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  .lo-showcase { padding-top: 10px; }
+
+  .lo-showcase-label {
+    margin: 0 0 -14px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .lo-lessons { margin-top: 72px; }
+
+  .lo-section-title {
+    margin: 0 0 8px;
+    font-family: var(--font-archivo);
+    font-size: 24px;
+    font-weight: 700;
+  }
+
+  .lo-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--border-strong);
+  }
+
+  .lo-list a {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+    gap: 16px;
+    align-items: baseline;
+    padding: 18px 4px 18px 0;
+    border-bottom: 1px solid var(--border);
+    color: var(--fg);
+    text-decoration: none;
+    transition: background-color var(--dur-fast) var(--ease-out);
+  }
+
+  .lo-list a:hover { background: var(--surface-subtle); }
+  .lo-list a:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+
+  .lo-num {
+    font-family: var(--font-archivo);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-muted);
+  }
+
+  .lo-list li.is-done .lo-num { color: var(--success); }
+
+  .lo-body { display: grid; gap: 4px; }
+  .lo-name { font-size: 18px; font-weight: 600; }
+  .lo-summary { font-size: 14.5px; line-height: 1.5; color: var(--text-muted); }
+
+  .lo-meta {
+    font-size: 13px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .lo-list li.is-done .lo-meta { color: var(--success); font-weight: 600; }
+
+  .lo-note {
+    margin: 18px 0 0;
+    font-size: 13.5px;
+    color: var(--text-muted);
+    max-width: 70ch;
+  }
+
+  @media (max-width: 960px) {
+    .lo-hero { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  }
+
+  @media (max-width: 600px) {
+    .lo { padding-top: 32px; }
+    .lo-list a { grid-template-columns: 34px minmax(0, 1fr); }
+    .lo-num { font-size: 17px; }
+    .lo-meta { grid-column: 2; }
+  }
+</style>

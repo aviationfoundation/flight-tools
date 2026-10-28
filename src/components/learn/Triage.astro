@@ -1,0 +1,152 @@
+---
+import type { Block } from '../../lib/learn/course';
+
+interface Props {
+  block: Extract<Block, { kind: 'triage' }>;
+}
+
+const { block } = Astro.props;
+---
+
+<section class="tr" data-check={block.id} data-kind="triage" aria-label="Briefing drill">
+  <dl class="tr-flight">
+    {block.flight.map(([label, value]) => (
+      <div>
+        <dt>{label}</dt>
+        <dd class="num">{value}</dd>
+      </div>
+    ))}
+  </dl>
+
+  <ol class="tr-list">
+    {block.items.map((item, i) => (
+      <li class="tr-item" data-item={i} data-affects={item.affects ? '1' : '0'}>
+        <pre class="tr-raw num">{item.raw}</pre>
+        <div class="tr-choice" role="radiogroup" aria-label={`Does ${item.raw.split(/\s/)[0]} affect this flight?`}>
+          <button type="button" class="tr-btn" role="radio" aria-checked="false" data-answer="1">Affects this flight</button>
+          <button type="button" class="tr-btn" role="radio" aria-checked="false" data-answer="0">Doesn't</button>
+        </div>
+        <p class="tr-why" hidden><strong class="tr-verdict"></strong> {item.why}</p>
+      </li>
+    ))}
+  </ol>
+
+  <div class="tr-actions">
+    <button type="button" class="btn-solid tr-submit" disabled>Check my briefing</button>
+    <p class="tr-status" aria-live="polite">Decide on all {block.items.length} NOTAMs to check your answers.</p>
+  </div>
+
+  {block.debrief && (
+    <aside class="tr-debrief" hidden>
+      <p class="tr-debrief-title">{block.debrief.title}</p>
+      <p class="tr-debrief-text">{block.debrief.text}</p>
+    </aside>
+  )}
+</section>
+
+<style>
+  .tr { margin: 32px 0; font-family: var(--font-sans); }
+
+  .tr-flight {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    margin: 0 0 28px;
+    border-top: 1px solid var(--border);
+    border-left: 1px solid var(--border);
+  }
+
+  .tr-flight div {
+    background: var(--surface-card);
+    padding: 12px 14px;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .tr-flight dt { font-size: 12px; color: var(--text-muted); }
+  .tr-flight dd { margin: 3px 0 0; font-size: 14.5px; font-weight: 600; line-height: 1.4; }
+
+  .tr-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 18px;
+    counter-reset: notam;
+  }
+
+  .tr-item {
+    padding: 16px 18px 18px;
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--border);
+  }
+
+  .tr-item.is-right { border-left-color: var(--success); }
+  .tr-item.is-wrong { border-left-color: var(--danger); }
+
+  .tr-raw {
+    margin: 0 0 14px;
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 13.5px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .tr-choice { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .tr-btn {
+    padding: 9px 14px;
+    font: inherit;
+    font-size: 14px;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border-input);
+    cursor: pointer;
+  }
+
+  .tr-btn:hover:not(:disabled) { border-color: var(--border-strong); }
+  .tr-btn:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+  .tr-btn[aria-checked='true'] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .tr-btn:disabled { cursor: default; }
+
+  .tr-why {
+    margin: 14px 0 0;
+    font-size: 15px;
+    line-height: 1.55;
+    max-width: 66ch;
+  }
+
+  .tr-item.is-right .tr-verdict { color: var(--success); }
+  .tr-item.is-wrong .tr-verdict { color: var(--danger); }
+
+  .tr-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 22px;
+  }
+
+  .tr-status { margin: 0; font-size: 14px; color: var(--text-muted); }
+
+  .tr-debrief {
+    margin: 32px 0 0;
+    padding: 18px 0 18px 22px;
+    border-left: 4px solid var(--accent-blue);
+  }
+
+  .tr-debrief-title {
+    margin: 0 0 6px;
+    font-family: var(--font-archivo);
+    font-size: 19px;
+    font-weight: 700;
+  }
+
+  .tr-debrief-text {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: 17.5px;
+    line-height: 1.65;
+    max-width: 62ch;
+  }
+</style>

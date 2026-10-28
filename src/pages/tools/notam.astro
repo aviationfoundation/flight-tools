@@ -134,6 +134,12 @@ const exampleCards = examples.map((example) => {
       </nav>
     )}
 
+    {decoded && (
+      <p class="nt-course-link">
+        New to NOTAMs? The <a href="/learn">Reading NOTAMs course</a> explains every part of these, with practice questions.
+      </p>
+    )}
+
     {decoded ? (
       decodedList.map((d, i) => (
         <div id={`notam-${i + 1}`} class="nt-item">
@@ -158,6 +164,10 @@ const exampleCards = examples.map((example) => {
           <p class="nt-intro-note">
             There's no public NOTAM feed to look these up automatically. The FAA's NOTAM API needs a
             registered account, so paste one from your briefing service.
+          </p>
+          <p class="nt-intro-note">
+            To read them without a decoder, take the free <a href="/learn">Reading NOTAMs course</a>: ten
+            short lessons, from the parts of a NOTAM to briefing a flight.
           </p>
         </section>
       )
@@ -218,6 +228,8 @@ const exampleCards = examples.map((example) => {
   .nt-list li.has-error a { border-bottom-color: var(--danger); }
   .nt-list a:hover { border-bottom-color: var(--fg); }
   .nt-item { scroll-margin-top: 16px; }
+  .nt-course-link { margin: 28px 0 0; font-size: 14px; color: var(--text-muted); }
+  .nt-course-link a, .nt-intro-note a { color: var(--fg); }
   .nt-item + .nt-item { margin-top: 72px; padding-top: 8px; border-top: 1px solid var(--border-strong); }
 
   @media (max-width: 640px) {

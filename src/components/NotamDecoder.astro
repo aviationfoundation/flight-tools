@@ -156,6 +156,23 @@ const qRows = decoded.qLine
     {groups.length === 0 && <p class="nd-summary">{decoded.plainSummary}</p>}
   </section>
 
+  {decoded.issues.length > 0 && (
+    <section class={`nd-issues${errors.length ? ' has-errors' : ''}`} aria-label="Problems with this NOTAM">
+      <p class="nd-issues-lead">
+        {errors.length
+          ? 'This NOTAM has errors, so parts of the decode may be wrong. Check it against your official briefing.'
+          : 'Check these points before you rely on this decode.'}
+      </p>
+      <ul>
+        {[...errors, ...warnings].map((i) => (
+          <li class={`is-${i.severity}`}>
+            {i.message}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )}
+
   {groups.length > 0 && (
     <section class="nd-says" aria-label="What the NOTAM says">
       {groups.map((group) => (
@@ -174,23 +191,6 @@ const qRows = decoded.qLine
           </ul>
         </div>
       ))}
-    </section>
-  )}
-
-  {decoded.issues.length > 0 && (
-    <section class={`nd-issues${errors.length ? ' has-errors' : ''}`} aria-label="Problems with this NOTAM">
-      <p class="nd-issues-lead">
-        {errors.length
-          ? 'This NOTAM has errors, so parts of the decode may be wrong. Check it against your official briefing.'
-          : 'This NOTAM decoded, but some of it does not follow the ICAO format.'}
-      </p>
-      <ul>
-        {[...errors, ...warnings].map((i) => (
-          <li class={`is-${i.severity}`}>
-            {i.message}
-          </li>
-        ))}
-      </ul>
     </section>
   )}
 

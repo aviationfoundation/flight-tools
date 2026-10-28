@@ -1,0 +1,153 @@
+---
+import type { Mark } from '../../lib/learn/course';
+
+interface Props {
+  raw: string;
+  marks?: Mark[];
+  caption?: string;
+  id: string;
+}
+
+const { raw, marks = [], caption, id } = Astro.props;
+
+const segments: Array<{ text: string; mark: number | null }> = [];
+let cursor = 0;
+marks.forEach((mark, i) => {
+  const at = raw.indexOf(mark.text, cursor);
+  if (at < 0) return;
+  if (at > cursor) segments.push({ text: raw.slice(cursor, at), mark: null });
+  segments.push({ text: mark.text, mark: i });
+  cursor = at + mark.text.length;
+});
+if (cursor < raw.length) segments.push({ text: raw.slice(cursor), mark: null });
+---
+
+<figure class={`nf${marks.length ? ' has-marks' : ''}`} data-nf>
+  <pre class="nf-strip num">{segments.map((s) =>
+    s.mark === null ? (
+      s.text
+    ) : (
+      <mark class={`nf-mark tone-${s.mark % 5}`} data-mark={s.mark} tabindex="0" aria-describedby={`${id}-n${s.mark}`}>{s.text}</mark>
+    ),
+  )}</pre>
+  {marks.length > 0 && (
+    <ol class="nf-legend">
+      {marks.map((mark, i) => (
+        <li id={`${id}-n${i}`} class={`tone-${i % 5}`} data-mark={i}>
+          <span class="nf-swatch" aria-hidden="true"></span>
+          <span class="nf-label">{mark.label}</span>
+          <span class="nf-note">{mark.note}</span>
+        </li>
+      ))}
+    </ol>
+  )}
+  {caption && <figcaption class="nf-caption">{caption}</figcaption>}
+</figure>
+
+<style>
+  .nf {
+    --tone-0: #00396E;
+    --tone-1: #8A5A00;
+    --tone-2: #17663B;
+    --tone-3: #8A2F12;
+    --tone-4: #5B3F8C;
+    margin: 28px 0;
+    display: grid;
+    gap: 0;
+  }
+
+  :global([data-theme='dark']) .nf {
+    --tone-0: #7FB2E8;
+    --tone-1: #E0B355;
+    --tone-2: #6FCF97;
+    --tone-3: #F2937A;
+    --tone-4: #B9A0E8;
+  }
+
+  .nf-strip {
+    margin: 0;
+    padding: 18px 20px 20px;
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--fg);
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 14.5px;
+    line-height: 2;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--fg);
+  }
+
+  .nf-mark {
+    background: transparent;
+    color: inherit;
+    padding: 1px 0;
+    border-bottom: 3px solid var(--tone);
+    cursor: default;
+    outline: none;
+    transition: background-color var(--dur-fast) var(--ease-out);
+  }
+
+  .nf-mark:hover,
+  .nf-mark:focus-visible,
+  .nf-mark.is-lit {
+    background: color-mix(in srgb, var(--tone) 16%, transparent);
+  }
+
+  .nf-mark:focus-visible { box-shadow: 0 0 0 2px var(--tone); }
+
+  .tone-0 { --tone: var(--tone-0); }
+  .tone-1 { --tone: var(--tone-1); }
+  .tone-2 { --tone: var(--tone-2); }
+  .tone-3 { --tone: var(--tone-3); }
+  .tone-4 { --tone: var(--tone-4); }
+
+  .nf-legend {
+    list-style: none;
+    margin: 0;
+    padding: 14px 0 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 10px 22px;
+    font-family: var(--font-sans);
+  }
+
+  .nf-legend li {
+    display: grid;
+    grid-template-columns: 12px 1fr;
+    column-gap: 9px;
+    align-items: baseline;
+    align-content: start;
+    padding: 4px 6px 4px 0;
+    transition: background-color var(--dur-fast) var(--ease-out);
+  }
+
+  .nf-legend li.is-lit { background: color-mix(in srgb, var(--tone) 10%, transparent); }
+
+  .nf-swatch {
+    width: 10px;
+    height: 10px;
+    background: var(--tone);
+    transform: translateY(1px);
+  }
+
+  .nf-label { font-size: 13px; font-weight: 700; }
+
+  .nf-note {
+    grid-column: 2;
+    font-size: 13.5px;
+    line-height: 1.45;
+    color: var(--text-muted);
+  }
+
+  .nf-caption {
+    margin-top: 10px;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  @media (max-width: 600px) {
+    .nf-strip { font-size: 13px; padding: 14px 14px 16px; }
+  }
+</style>

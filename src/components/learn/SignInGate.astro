@@ -1,0 +1,64 @@
+---
+import { signInUrl } from '../../lib/accounts';
+
+interface Props {
+  status: 'signed-out' | 'unavailable';
+  returnTo: string;
+}
+
+const { status, returnTo } = Astro.props;
+---
+
+<section class="gate">
+  {status === 'unavailable' ? (
+    <>
+      <h2 class="gate-title">Accounts can't be reached right now</h2>
+      <p class="gate-text">Lessons open once your aviation.foundation account is confirmed, and that check isn't working at the moment. Try again in a few minutes.</p>
+    </>
+  ) : (
+    <>
+      <h2 class="gate-title">Sign in to take this lesson</h2>
+      <p class="gate-text">
+        The course is free with an aviation.foundation account. Your scores are saved to it, so you can stop
+        after any lesson and pick up again on another device.
+      </p>
+      <div class="gate-actions">
+        <a class="btn-solid" href={signInUrl(returnTo, true)}>Create a free account</a>
+        <a class="btn-outline" href={signInUrl(returnTo)}>Sign in</a>
+      </div>
+      <p class="gate-note">You come straight back to this lesson afterwards. A new account asks you to confirm your email address first.</p>
+    </>
+  )}
+</section>
+
+<style>
+  .gate {
+    margin-top: 32px;
+    padding: 26px 26px 24px;
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--fg);
+  }
+
+  .gate-title {
+    margin: 0;
+    font-family: var(--font-archivo);
+    font-size: 22px;
+    font-weight: 700;
+  }
+
+  .gate-text {
+    margin: 10px 0 0;
+    font-size: 16px;
+    line-height: 1.6;
+    max-width: 58ch;
+  }
+
+  .gate-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+
+  .gate-note {
+    margin: 14px 0 0;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+</style>

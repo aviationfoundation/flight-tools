@@ -1,0 +1,108 @@
+---
+import { LESSONS } from '../../lib/learn/course';
+import type { LessonProgress } from '../../lib/accounts';
+
+interface Props {
+  current: string;
+  progress: LessonProgress[];
+}
+
+const { current, progress } = Astro.props;
+const done = new Set(progress.map((p) => p.lesson));
+---
+
+<nav class="rail" aria-label="Lessons in this course">
+  <a class="rail-course" href="/learn">Reading NOTAMs</a>
+  <ol class="rail-list">
+    {LESSONS.map((lesson, i) => (
+      <li class={`${done.has(lesson.id) ? 'is-done' : ''}${lesson.id === current ? ' is-current' : ''}`} data-rail-lesson={lesson.id}>
+        <a href={`/learn/${lesson.id}`} aria-current={lesson.id === current ? 'page' : undefined}>
+          <span class="rail-num num" aria-hidden="true">{i + 1}</span>
+          <span class="rail-title">{lesson.title}</span>
+          <span class="rail-state sr-only">{done.has(lesson.id) ? ', finished' : ''}</span>
+        </a>
+      </li>
+    ))}
+  </ol>
+</nav>
+
+<style>
+  .rail {
+    position: sticky;
+    top: 24px;
+    font-family: var(--font-sans);
+  }
+
+  .rail-course {
+    display: block;
+    margin-bottom: 14px;
+    font-family: var(--font-archivo);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--fg);
+    text-decoration: none;
+  }
+
+  .rail-course:hover { text-decoration: underline; }
+
+  .rail-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-left: 1px solid var(--border);
+  }
+
+  .rail-list a {
+    display: grid;
+    grid-template-columns: 24px 1fr;
+    gap: 8px;
+    align-items: baseline;
+    margin-left: -1px;
+    padding: 7px 8px 7px 12px;
+    border-left: 2px solid transparent;
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 13.5px;
+    line-height: 1.35;
+  }
+
+  .rail-list a:hover { color: var(--fg); }
+  .rail-list a:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
+
+  .rail-list li.is-current a {
+    color: var(--fg);
+    font-weight: 600;
+    border-left-color: var(--fg);
+  }
+
+  .rail-num {
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .rail-list li.is-done .rail-num {
+    color: transparent;
+    position: relative;
+  }
+
+  .rail-list li.is-done .rail-num::after {
+    content: '';
+    position: absolute;
+    left: 1px;
+    top: 50%;
+    width: 9px;
+    height: 5px;
+    border-left: 2px solid var(--success);
+    border-bottom: 2px solid var(--success);
+    transform: translateY(-70%) rotate(-45deg);
+  }
+
+  @media (max-width: 960px) {
+    .rail {
+      position: static;
+      margin-bottom: 8px;
+    }
+
+    .rail-list { display: none; }
+  }
+</style>

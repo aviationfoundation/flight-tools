@@ -1,0 +1,193 @@
+---
+import type { Block } from '../../lib/learn/course';
+
+type CheckBlock = Extract<Block, { kind: 'choice' | 'answer' | 'pick' }>;
+
+interface Props {
+  check: CheckBlock;
+  number: number;
+}
+
+const { check, number } = Astro.props;
+
+function rank(seed: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < seed.length; i++) hash = Math.imul(hash ^ seed.charCodeAt(i), 16777619);
+  return hash >>> 0;
+}
+
+const order = check.kind === 'choice' ? check.options.map((_, i) => i).sort((a, b) => rank(`${check.id}:${a}`) - rank(`${check.id}:${b}`)) : [];
+
+const pickSegments: Array<{ text: string; choice: boolean }> = [];
+if (check.kind === 'pick') {
+  let cursor = 0;
+  for (const choice of check.choices) {
+    const at = check.raw.indexOf(choice, cursor);
+    if (at < 0) continue;
+    if (at > cursor) pickSegments.push({ text: check.raw.slice(cursor, at), choice: false });
+    pickSegments.push({ text: choice, choice: true });
+    cursor = at + choice.length;
+  }
+  if (cursor < check.raw.length) pickSegments.push({ text: check.raw.slice(cursor), choice: false });
+}
+---
+
+<section class="ck" data-check={check.id} data-kind={check.kind} aria-labelledby={`${check.id}-prompt`}>
+  <p class="ck-tag">Check {number}</p>
+  <p class="ck-prompt" id={`${check.id}-prompt`}>{check.prompt}</p>
+
+  {check.kind === 'choice' && (
+    <div class="ck-options" role="group" aria-labelledby={`${check.id}-prompt`}>
+      {order.map((i) => (
+        <button type="button" class="ck-option" data-option={i} data-correct={check.options[i].correct ? '1' : undefined}>
+          <span class="ck-option-text">{check.options[i].text}</span>
+        </button>
+      ))}
+    </div>
+  )}
+
+  {check.kind === 'pick' && (
+    <pre class="ck-pick num">{pickSegments.map((s) =>
+      s.choice ? (
+        <button type="button" class="ck-pick-part" data-option={check.choices.indexOf(s.text)} data-correct={s.text === check.answer ? '1' : undefined}>{s.text}</button>
+      ) : (
+        s.text
+      ),
+    )}</pre>
+  )}
+
+  {check.kind === 'answer' && (
+    <form class="ck-answer" data-accept={JSON.stringify(check.accept)}>
+      <label class="sr-only" for={`${check.id}-input`}>{check.placeholder}</label>
+      <input id={`${check.id}-input`} class="ck-input num" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder={check.placeholder} maxlength="12" />
+      <button type="submit" class="btn-solid ck-submit">Check</button>
+    </form>
+  )}
+
+  <div class="ck-feedback" aria-live="polite">
+    <p class="ck-verdict" hidden></p>
+    {check.kind === 'choice' && check.options.map((option, i) => (
+      <p class="ck-why" data-why={i} hidden>{option.why}</p>
+    ))}
+    {(check.kind === 'pick' || check.kind === 'answer') && <p class="ck-why" data-why="answer" hidden>{check.why}</p>}
+  </div>
+</section>
+
+<style>
+  .ck {
+    margin: 36px 0;
+    padding: 20px 22px 22px;
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--fg);
+    font-family: var(--font-sans);
+  }
+
+  .ck.is-right { border-left-color: var(--success); }
+
+  .ck-tag {
+    margin: 0 0 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  .ck-prompt {
+    margin: 0 0 16px;
+    font-size: 16.5px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+
+  .ck-options { display: grid; gap: 8px; }
+
+  .ck-option {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 12px 14px;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border-input);
+    font: inherit;
+    font-size: 15px;
+    line-height: 1.45;
+    cursor: pointer;
+    transition: border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+  }
+
+  .ck-option:hover:not(:disabled) { border-color: var(--border-strong); }
+  .ck-option:focus-visible, .ck-pick-part:focus-visible, .ck-input:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+
+  .ck-option.is-wrong, .ck-pick-part.is-wrong {
+    border-color: var(--danger);
+    background: var(--danger-bg);
+  }
+
+  .ck-option.is-right, .ck-pick-part.is-right {
+    border-color: var(--success);
+    background: var(--success-bg);
+  }
+
+  .ck-option:disabled { cursor: default; }
+  .ck-option:disabled:not(.is-right):not(.is-wrong) { opacity: 0.6; }
+
+  .ck-pick {
+    margin: 0;
+    padding: 14px 16px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 14px;
+    line-height: 2.3;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .ck-pick-part {
+    font: inherit;
+    color: inherit;
+    background: var(--surface-card);
+    border: 1px dashed var(--border-input);
+    padding: 2px 4px;
+    margin: 0 1px;
+    cursor: pointer;
+  }
+
+  .ck-pick-part:hover:not(:disabled) { border-style: solid; border-color: var(--border-strong); }
+  .ck-pick-part:disabled { cursor: default; }
+
+  .ck-answer { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .ck-input {
+    width: 9em;
+    padding: 10px 12px;
+    font: inherit;
+    font-size: 16px;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border-input);
+  }
+
+  .ck-input.is-wrong { border-color: var(--danger); }
+  .ck-input.is-right { border-color: var(--success); }
+
+  .ck-feedback:empty { display: none; }
+
+  .ck-verdict {
+    margin: 16px 0 4px;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .ck-verdict.is-right { color: var(--success); }
+  .ck-verdict.is-wrong { color: var(--danger); }
+
+  .ck-why {
+    margin: 4px 0 0;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--fg);
+    max-width: 62ch;
+  }
+</style>

@@ -1,0 +1,460 @@
+---
+export const prerender = false;
+
+import Layout from '../../layouts/Layout.astro';
+import NotamFigure from '../../components/learn/NotamFigure.astro';
+import Check from '../../components/learn/Check.astro';
+import Triage from '../../components/learn/Triage.astro';
+import LessonRail from '../../components/learn/LessonRail.astro';
+import SignInGate from '../../components/learn/SignInGate.astro';
+import { COURSE_ID, LESSONS, checkCount, lessonById } from '../../lib/learn/course';
+import { getAccount, getProgress, type LessonProgress } from '../../lib/accounts';
+
+Astro.response.headers.set('Cache-Control', 'private, no-store');
+
+const lesson = lessonById(Astro.params.lesson ?? '');
+if (!lesson) Astro.response.status = 404;
+
+const state = lesson ? await getAccount(Astro.request) : { status: 'signed-out' as const };
+const progress: LessonProgress[] = state.status === 'signed-in' ? (await getProgress(state.token, COURSE_ID)) ?? [] : [];
+const index = lesson ? LESSONS.indexOf(lesson) : -1;
+const previous = index > 0 ? LESSONS[index - 1] : null;
+const next = index >= 0 && index < LESSONS.length - 1 ? LESSONS[index + 1] : null;
+const total = lesson ? checkCount(lesson) : 0;
+const done = lesson ? progress.find((p) => p.lesson === lesson.id) : undefined;
+
+let checkNumber = 0;
+const numbered = (lesson?.blocks ?? []).map((block, position) => {
+  if (block.kind === 'choice' || block.kind === 'answer' || block.kind === 'pick') checkNumber += 1;
+  return { block, number: checkNumber, position };
+});
+---
+
+<Layout
+  title={lesson ? `${lesson.title} · Reading NOTAMs` : 'Lesson not found · Reading NOTAMs'}
+  description={lesson ? lesson.summary : 'This lesson does not exist.'}
+  currentPath="/learn"
+>
+  {!lesson ? (
+    <div class="lp-missing container-site px-site">
+      <h1 class="lp-title">There's no lesson at this address</h1>
+      <p class="lp-summary"><a href="/learn">See all ten lessons</a>.</p>
+    </div>
+  ) : (
+    <div class="lp container-site px-site">
+      <LessonRail current={lesson.id} progress={progress} />
+
+      <article
+        class="lp-main"
+        data-lesson={lesson.id}
+        data-total={total}
+        data-signed-in={state.status === 'signed-in' ? '1' : undefined}
+      >
+        <p class="lp-position">Lesson {index + 1} of {LESSONS.length}, about {lesson.minutes} minutes</p>
+        <h1 class="lp-title">{lesson.title}</h1>
+        <p class="lp-summary">{lesson.summary}</p>
+
+        {state.status !== 'signed-in' ? (
+          <SignInGate status={state.status} returnTo={Astro.url.href} />
+        ) : (
+          <>
+            {done && (
+              <p class="lp-before">
+                You finished this lesson before, with {done.correct} of {done.total} right first time. Going through it again keeps your best score.
+              </p>
+            )}
+
+            <div class="lp-body">
+              {numbered.map(({ block, number, position }) =>
+                block.kind === 'p' ? (
+                  <p class="lp-p">{block.text}</p>
+                ) : block.kind === 'notam' ? (
+                  <NotamFigure raw={block.raw} marks={block.marks} caption={block.caption} id={`${lesson.id}-f${position}`} />
+                ) : block.kind === 'table' ? (
+                  <div class="lp-table-wrap">
+                    <table class="lp-table">
+                      <thead><tr>{block.head.map((h) => <th scope="col">{h}</th>)}</tr></thead>
+                      <tbody>
+                        {block.rows.map((row) => (
+                          <tr>{row.map((cell, i) => (i === 0 ? <th scope="row" class="num">{cell}</th> : <td>{cell}</td>))}</tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : block.kind === 'rule' ? (
+                  <aside class="lp-rule">
+                    <p class="lp-rule-title">{block.title}</p>
+                    <p class="lp-rule-text">{block.text}</p>
+                  </aside>
+                ) : block.kind === 'triage' ? (
+                  <Triage block={block} />
+                ) : (
+                  <Check check={block} number={number} />
+                ),
+              )}
+            </div>
+
+            <noscript>
+              <p class="lp-noscript">The checks in this lesson need JavaScript to mark your answers.</p>
+            </noscript>
+
+            <section class="lp-done" data-done hidden aria-live="polite">
+              <p class="lp-done-title">Lesson complete</p>
+              <p class="lp-done-score" data-score></p>
+              <p class="lp-done-save" data-save></p>
+              <div class="lp-done-actions">
+                {next ? (
+                  <a class="btn-solid" href={`/learn/${next.id}`}>Next: {next.title}</a>
+                ) : (
+                  <a class="btn-solid" href="/tools/notam">Decode a real briefing</a>
+                )}
+                <a class="btn-outline" href="/learn">All lessons</a>
+              </div>
+            </section>
+          </>
+        )}
+
+        <nav class="lp-pager" aria-label="Lessons">
+          {previous ? <a href={`/learn/${previous.id}`} rel="prev"><span>Previous</span>{previous.title}</a> : <span></span>}
+          {next && <a href={`/learn/${next.id}`} rel="next" class="lp-pager-next"><span>Next</span>{next.title}</a>}
+        </nav>
+      </article>
+    </div>
+  )}
+</Layout>
+
+<style>
+  .lp {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 700px);
+    gap: 64px;
+    padding-top: 48px;
+    padding-bottom: 40px;
+    align-items: start;
+  }
+
+  .lp-missing { padding-top: 64px; padding-bottom: 40px; }
+
+  .lp-position {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .lp-title {
+    margin: 8px 0 0;
+    font-family: var(--font-archivo);
+    font-size: clamp(32px, 4.4vw, 48px);
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.015em;
+  }
+
+  .lp-summary {
+    margin: 14px 0 0;
+    font-size: 18px;
+    line-height: 1.55;
+    color: var(--text-muted);
+    max-width: 56ch;
+  }
+
+  .lp-before {
+    margin: 24px 0 0;
+    padding: 10px 14px;
+    background: var(--success-bg);
+    border-left: 3px solid var(--success);
+    font-size: 14px;
+  }
+
+  .lp-body { margin-top: 32px; }
+
+  .lp-p {
+    margin: 0 0 18px;
+    font-family: var(--font-serif);
+    font-size: 18.5px;
+    line-height: 1.7;
+    max-width: 66ch;
+  }
+
+  .lp-table-wrap { margin: 24px 0 28px; overflow-x: auto; }
+
+  .lp-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14.5px;
+    line-height: 1.45;
+  }
+
+  .lp-table th, .lp-table td {
+    text-align: left;
+    vertical-align: top;
+    padding: 9px 14px 9px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .lp-table thead th {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    border-bottom-color: var(--border-strong);
+  }
+
+  .lp-table tbody th {
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 13.5px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .lp-rule {
+    margin: 32px 0;
+    padding: 18px 0 18px 22px;
+    border-left: 4px solid var(--accent-blue);
+  }
+
+  .lp-rule-title {
+    margin: 0 0 6px;
+    font-family: var(--font-archivo);
+    font-size: 19px;
+    font-weight: 700;
+  }
+
+  .lp-rule-text {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: 17.5px;
+    line-height: 1.65;
+  }
+
+  .lp-noscript { font-size: 14px; color: var(--warning); }
+
+  .lp-done {
+    margin: 40px 0 0;
+    padding: 24px;
+    background: var(--fg);
+    color: var(--bg);
+  }
+
+  .lp-done-title {
+    margin: 0;
+    font-family: var(--font-archivo);
+    font-size: 26px;
+    font-weight: 700;
+  }
+
+  .lp-done-score { margin: 8px 0 0; font-size: 16px; }
+  .lp-done-save { margin: 4px 0 0; font-size: 13.5px; opacity: 0.8; }
+
+  .lp-done-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+  .lp-done .btn-solid { background: var(--bg); color: var(--fg); }
+  .lp-done .btn-outline { color: var(--bg); border-color: color-mix(in srgb, var(--bg) 45%, transparent); }
+  .lp-done .btn-outline:hover { background: transparent; border-color: var(--bg); color: var(--bg); }
+
+  .lp-pager {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 56px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+
+  .lp-pager a {
+    display: grid;
+    gap: 2px;
+    color: var(--fg);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 15px;
+  }
+
+  .lp-pager a span { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+  .lp-pager a:hover { text-decoration: underline; }
+  .lp-pager-next { text-align: right; }
+
+  @media (max-width: 960px) {
+    .lp { grid-template-columns: minmax(0, 1fr); gap: 0; padding-top: 24px; }
+  }
+
+  @media (max-width: 600px) {
+    .lp-p { font-size: 17px; }
+  }
+</style>
+
+<script>
+  import { normaliseAnswer } from '../../lib/learn/answer';
+
+  const root = document.querySelector<HTMLElement>('[data-lesson][data-signed-in]');
+  if (root) setup(root);
+
+  function setup(article: HTMLElement) {
+    const lesson = article.dataset.lesson!;
+    const total = Number(article.dataset.total);
+    const outcome = new Map<string, boolean>();
+
+    function record(key: string, right: boolean) {
+      if (!outcome.has(key)) outcome.set(key, right);
+    }
+
+    let finished = false;
+    function maybeFinish() {
+      if (finished) return;
+      const checks = article.querySelectorAll('[data-check]');
+      const allDone = [...checks].every((c) => c.classList.contains('is-done'));
+      if (!allDone) return;
+      finished = true;
+      const correct = [...outcome.values()].filter(Boolean).length;
+      const panel = article.querySelector<HTMLElement>('[data-done]')!;
+      panel.querySelector('[data-score]')!.textContent = `You got ${correct} of ${total} right first time.`;
+      const save = panel.querySelector<HTMLElement>('[data-save]')!;
+      save.textContent = 'Saving to your account…';
+      panel.hidden = false;
+      save.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+      fetch('/api/learn/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lesson, correct }),
+      })
+        .then(async (response) => {
+          if (response.ok) {
+            save.textContent = 'Saved to your account.';
+            document.querySelector(`[data-rail-lesson="${lesson}"]`)?.classList.add('is-done');
+          } else if (response.status === 401) {
+            save.textContent = 'Your sign-in has expired, so this score wasn\'t saved. Sign in again and repeat the lesson to save it.';
+          } else {
+            save.textContent = 'This score couldn\'t be saved just now. Your answers still count; repeat the lesson later to save it.';
+          }
+        })
+        .catch(() => {
+          save.textContent = 'This score couldn\'t be saved just now. Your answers still count; repeat the lesson later to save it.';
+        });
+    }
+
+    function verdict(check: HTMLElement, right: boolean, text: string) {
+      const node = check.querySelector<HTMLElement>('.ck-verdict')!;
+      node.textContent = text;
+      node.classList.toggle('is-right', right);
+      node.classList.toggle('is-wrong', !right);
+      node.hidden = false;
+    }
+
+    function showWhy(check: HTMLElement, key: string) {
+      check.querySelectorAll<HTMLElement>('[data-why]').forEach((p) => {
+        p.hidden = p.dataset.why !== key;
+      });
+    }
+
+    article.querySelectorAll<HTMLElement>('[data-kind="choice"], [data-kind="pick"]').forEach((check) => {
+      const id = check.dataset.check!;
+      const buttons = [...check.querySelectorAll<HTMLButtonElement>('[data-option]')];
+      buttons.forEach((button) => {
+        button.addEventListener('click', () => {
+          if (check.classList.contains('is-done')) return;
+          const right = button.dataset.correct === '1';
+          record(id, right);
+          button.classList.add(right ? 'is-right' : 'is-wrong');
+          button.disabled = true;
+          if (check.dataset.kind === 'choice') showWhy(check, button.dataset.option!);
+          else showWhy(check, 'answer');
+          if (right) {
+            verdict(check, true, outcome.get(id) ? 'Right.' : 'That\'s it.');
+            check.classList.add('is-done', 'is-right');
+            buttons.forEach((b) => (b.disabled = true));
+            maybeFinish();
+          } else {
+            verdict(check, false, 'Not this one. Try another.');
+            if (check.dataset.kind === 'pick') check.querySelectorAll<HTMLElement>('[data-why]').forEach((p) => (p.hidden = true));
+          }
+        });
+      });
+    });
+
+    article.querySelectorAll<HTMLElement>('[data-kind="answer"]').forEach((check) => {
+      const id = check.dataset.check!;
+      const form = check.querySelector<HTMLFormElement>('form')!;
+      const input = form.querySelector<HTMLInputElement>('input')!;
+      const accept: string[] = JSON.parse(form.dataset.accept ?? '[]');
+      let misses = 0;
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        if (check.classList.contains('is-done') || !input.value.trim()) return;
+        const right = accept.some((a) => normaliseAnswer(a) === normaliseAnswer(input.value));
+        record(id, right);
+        input.classList.toggle('is-right', right);
+        input.classList.toggle('is-wrong', !right);
+        if (right) {
+          verdict(check, true, outcome.get(id) ? 'Right.' : 'That\'s it.');
+          showWhy(check, 'answer');
+        } else {
+          misses += 1;
+          if (misses < 2) {
+            verdict(check, false, 'Not quite. Try again.');
+            return;
+          }
+          verdict(check, false, `The answer is ${accept[0]}.`);
+          showWhy(check, 'answer');
+        }
+        input.readOnly = true;
+        form.querySelector<HTMLButtonElement>('button')!.disabled = true;
+        check.classList.add('is-done');
+        if (right) check.classList.add('is-right');
+        maybeFinish();
+      });
+    });
+
+    article.querySelectorAll<HTMLElement>('[data-kind="triage"]').forEach((check) => {
+      const id = check.dataset.check!;
+      const items = [...check.querySelectorAll<HTMLElement>('[data-item]')];
+      const submit = check.querySelector<HTMLButtonElement>('.tr-submit')!;
+      const status = check.querySelector<HTMLElement>('.tr-status')!;
+      const chosen = new Map<number, string>();
+      items.forEach((item) => {
+        const index = Number(item.dataset.item);
+        const buttons = [...item.querySelectorAll<HTMLButtonElement>('[data-answer]')];
+        buttons.forEach((button) => {
+          button.addEventListener('click', () => {
+            if (check.classList.contains('is-done')) return;
+            buttons.forEach((b) => b.setAttribute('aria-checked', String(b === button)));
+            chosen.set(index, button.dataset.answer!);
+            const left = items.length - chosen.size;
+            submit.disabled = left > 0;
+            status.textContent = left > 0 ? `${left} still to decide.` : 'Ready when you are.';
+          });
+        });
+      });
+      submit.addEventListener('click', () => {
+        if (chosen.size < items.length || check.classList.contains('is-done')) return;
+        let right = 0;
+        items.forEach((item) => {
+          const index = Number(item.dataset.item);
+          const ok = chosen.get(index) === item.dataset.affects;
+          if (ok) right += 1;
+          record(`${id}#${index}`, ok);
+          item.classList.add(ok ? 'is-right' : 'is-wrong');
+          item.querySelector<HTMLElement>('.tr-verdict')!.textContent = `${ok ? 'Right.' : 'Not quite.'} ${item.dataset.affects === '1' ? 'It affects this flight.' : 'It doesn\'t affect this flight.'}`;
+          item.querySelector<HTMLElement>('.tr-why')!.hidden = false;
+          item.querySelectorAll<HTMLButtonElement>('[data-answer]').forEach((b) => (b.disabled = true));
+        });
+        submit.disabled = true;
+        status.textContent = `${right} of ${items.length} right. Read the notes under the ones you missed.`;
+        const debrief = check.querySelector<HTMLElement>('.tr-debrief');
+        if (debrief) debrief.hidden = false;
+        check.classList.add('is-done');
+        maybeFinish();
+      });
+    });
+
+    article.querySelectorAll<HTMLElement>('[data-nf]').forEach((figure) => {
+      const light = (index: string | undefined, on: boolean) => {
+        if (index === undefined) return;
+        figure.querySelectorAll<HTMLElement>(`[data-mark="${index}"]`).forEach((el) => el.classList.toggle('is-lit', on));
+      };
+      figure.querySelectorAll<HTMLElement>('[data-mark]').forEach((el) => {
+        el.addEventListener('mouseenter', () => light(el.dataset.mark, true));
+        el.addEventListener('mouseleave', () => light(el.dataset.mark, false));
+        el.addEventListener('focus', () => light(el.dataset.mark, true));
+        el.addEventListener('blur', () => light(el.dataset.mark, false));
+      });
+    });
+  }
+</script>
