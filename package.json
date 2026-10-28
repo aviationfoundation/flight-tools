@@ -13,8 +13,8 @@
   "dependencies": {
     "@astrojs/cloudflare": "^14.4.2",
     "astro": "^7.4.2",
+    "maplibre-gl": "^5.24.0",
     "typescript": "^7.0.2",
     "zod": "^4.6.7"
-  },
-  "devDependencies": {}
+  }
 }

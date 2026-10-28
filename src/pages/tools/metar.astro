@@ -286,8 +286,7 @@ const pageTitle = report?.station
               </p>
               <figure class="wx-map" data-wx-map hidden>
                 <div class="wx-map-frame">
-                  <canvas class="wx-map-canvas" role="img" aria-label="Map of reporting stations in North America, coloured by flight category"></canvas>
-                  <div class="wx-map-tip" data-wx-map-tip hidden></div>
+                  <div class="wx-map-canvas" data-wx-map-canvas aria-label="Map of reporting stations, coloured by flight category"></div>
                 </div>
                 <figcaption class="wx-map-legend" data-wx-map-legend></figcaption>
               </figure>
@@ -622,7 +621,7 @@ const pageTitle = report?.station
     --map-mvfr: #1F5FA8;
     --map-ifr: #C0362A;
     --map-lifr: #8E3AA4;
-    --map-grid: rgba(17, 17, 17, 0.07);
+    --map-stroke: rgba(255, 255, 255, 0.9);
     margin: 0 0 18px;
   }
 
@@ -631,7 +630,7 @@ const pageTitle = report?.station
     --map-mvfr: #7FA8D6;
     --map-ifr: #F27A70;
     --map-lifr: #D59BE2;
-    --map-grid: rgba(255, 255, 255, 0.07);
+    --map-stroke: rgba(0, 0, 0, 0.6);
   }
 
   .wx-map-frame {
@@ -641,26 +640,23 @@ const pageTitle = report?.station
   }
 
   .wx-map-canvas {
-    display: block;
     width: 100%;
-    height: auto;
     aspect-ratio: 2 / 1;
-    cursor: crosshair;
+    min-height: 320px;
   }
 
-  .wx-map-tip {
-    position: absolute;
-    pointer-events: none;
+  .wx-map-frame :global(.wx-map-popup .maplibregl-popup-content) {
     background: var(--fg);
     color: var(--bg);
+    font-family: var(--font-sans);
     font-size: 12px;
-    line-height: 1.4;
     padding: 6px 9px;
-    white-space: nowrap;
-    transform: translate(-50%, calc(-100% - 10px));
+    border-radius: 0;
+    box-shadow: none;
   }
 
-  .wx-map-tip :global(strong) { font-family: var(--font-archivo); margin-right: 6px; }
+  .wx-map-frame :global(.wx-map-popup .maplibregl-popup-tip) { display: none; }
+  .wx-map-frame :global(.wx-map-popup strong) { font-family: var(--font-archivo); margin-right: 4px; }
 
   .wx-map-legend {
     display: flex;
@@ -672,6 +668,7 @@ const pageTitle = report?.station
   }
 
   .wx-map-legend :global(span) { display: inline-flex; align-items: center; gap: 6px; }
+  .wx-map-legend :global(.wx-map-total) { margin-left: auto; color: var(--text-subtle); }
 
   .wx-map-legend :global(i) {
     width: 9px;
@@ -934,7 +931,6 @@ const pageTitle = report?.station
 
   type MapStation = [string, number, number, 'VFR' | 'MVFR' | 'IFR' | 'LIFR', number | null, number, number | null, string];
 
-  const MAP_BOUNDS = { west: -170, east: -50, south: 14, north: 72 };
   const MAP_ORDER: MapStation[3][] = ['VFR', 'MVFR', 'IFR', 'LIFR'];
 
   function fractionText(value: number): string {
@@ -947,84 +943,88 @@ const pageTitle = report?.station
 
   async function setupMap() {
     const figure = document.querySelector<HTMLElement>('[data-wx-map]');
-    if (!figure) return;
-    const canvas = figure.querySelector<HTMLCanvasElement>('canvas');
-    const tip = figure.querySelector<HTMLElement>('[data-wx-map-tip]');
-    const legend = figure.querySelector<HTMLElement>('[data-wx-map-legend]');
-    if (!canvas || !tip || !legend) return;
+    const container = figure?.querySelector<HTMLElement>('[data-wx-map-canvas]');
+    const legend = figure?.querySelector<HTMLElement>('[data-wx-map-legend]');
+    if (!figure || !container || !legend) return;
 
     let stations: MapStation[];
     try {
       const response = await fetch('/data/categories.json');
       if (!response.ok) return;
-      const data = await response.json();
-      stations = (data.stations as MapStation[]).filter(
-        (s) => s[2] >= MAP_BOUNDS.west && s[2] <= MAP_BOUNDS.east && s[1] >= MAP_BOUNDS.south && s[1] <= MAP_BOUNDS.north,
-      );
+      stations = (await response.json()).stations as MapStation[];
     } catch {
       return;
     }
     if (!stations.length) return;
-    figure.hidden = false;
 
-    const midLat = ((MAP_BOUNDS.north + MAP_BOUNDS.south) / 2) * (Math.PI / 180);
-    const spanX = (MAP_BOUNDS.east - MAP_BOUNDS.west) * Math.cos(midLat);
-    const spanY = MAP_BOUNDS.north - MAP_BOUNDS.south;
-    let points: Array<{ x: number; y: number; s: MapStation }> = [];
+    const describe = (s: MapStation) =>
+      [
+        s[3],
+        s[4] != null ? `${fractionText(s[4])}${s[5] ? '+' : ''} sm` : null,
+        s[6] != null ? `ceiling ${s[6].toLocaleString('en-US')} ft` : 'no ceiling',
+      ].filter(Boolean).join(', ');
 
-    const draw = () => {
-      const width = canvas.clientWidth;
-      const height = canvas.clientHeight;
-      const ratio = window.devicePixelRatio || 1;
-      canvas.width = Math.round(width * ratio);
-      canvas.height = Math.round(height * ratio);
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-      ctx.clearRect(0, 0, width, height);
-
-      const scale = Math.min(width / spanX, height / spanY);
-      const offsetX = (width - spanX * scale) / 2;
-      const offsetY = (height - spanY * scale) / 2;
-      const project = (lat: number, lon: number) => ({
-        x: offsetX + (lon - MAP_BOUNDS.west) * Math.cos(midLat) * scale,
-        y: offsetY + (MAP_BOUNDS.north - lat) * scale,
-      });
-
-      const style = getComputedStyle(figure);
-      ctx.strokeStyle = style.getPropertyValue('--map-grid').trim();
-      ctx.lineWidth = 1;
-      for (let lon = -160; lon <= -60; lon += 20) {
-        const a = project(MAP_BOUNDS.north, lon);
-        const b = project(MAP_BOUNDS.south, lon);
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-      }
-      for (let lat = 20; lat <= 70; lat += 10) {
-        const a = project(lat, MAP_BOUNDS.west);
-        const b = project(lat, MAP_BOUNDS.east);
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-      }
-
-      const radius = width < 600 ? 1.6 : 2.3;
-      points = [];
-      for (const category of MAP_ORDER) {
-        ctx.fillStyle = style.getPropertyValue(`--map-${category.toLowerCase()}`).trim();
-        for (const s of stations) {
-          if (s[3] !== category) continue;
-          const p = project(s[1], s[2]);
-          points.push({ ...p, s });
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, category === 'VFR' ? radius : radius + 0.7, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
+    const geojson = {
+      type: 'FeatureCollection' as const,
+      features: stations.map((s) => ({
+        type: 'Feature' as const,
+        geometry: { type: 'Point' as const, coordinates: [s[2], s[1]] },
+        properties: { icao: s[0], category: s[3], rank: MAP_ORDER.indexOf(s[3]), detail: describe(s) },
+      })),
     };
+
+    figure.hidden = false;
+    const { createMap, cssColor } = await import('../../lib/map-client');
+    let created;
+    try {
+      created = await createMap(container, { bounds: [[-168, 15], [-52, 70]] }, (map) => {
+        if (map.getSource('stations')) return;
+        map.addSource('stations', { type: 'geojson', data: geojson });
+        map.addLayer({
+          id: 'stations',
+          type: 'circle',
+          source: 'stations',
+          layout: { 'circle-sort-key': ['get', 'rank'] },
+          paint: {
+            'circle-radius': ['interpolate', ['linear'], ['zoom'], 2, 2, 5, 3.5, 8, 6],
+            'circle-color': [
+              'match', ['get', 'category'],
+              'VFR', cssColor(figure, '--map-vfr'),
+              'MVFR', cssColor(figure, '--map-mvfr'),
+              'IFR', cssColor(figure, '--map-ifr'),
+              cssColor(figure, '--map-lifr'),
+            ],
+            'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 2, 0, 6, 1],
+            'circle-stroke-color': cssColor(figure, '--map-stroke'),
+          },
+        });
+      });
+    } catch {
+      figure.hidden = true;
+      return;
+    }
+    const { map, lib } = created;
+
+    const popup = new lib.Popup({ closeButton: false, closeOnClick: false, offset: 10, className: 'wx-map-popup' });
+    map.on('mousemove', 'stations', (event) => {
+      const feature = event.features?.[0];
+      if (!feature) return;
+      map.getCanvas().style.cursor = 'pointer';
+      const props = feature.properties as { icao: string; detail: string };
+      const body = document.createElement('div');
+      const code = document.createElement('strong');
+      code.textContent = props.icao;
+      body.append(code, ` ${props.detail}`);
+      popup.setLngLat((feature.geometry as unknown as { coordinates: [number, number] }).coordinates).setDOMContent(body).addTo(map);
+    });
+    map.on('mouseleave', 'stations', () => {
+      map.getCanvas().style.cursor = '';
+      popup.remove();
+    });
+    map.on('click', 'stations', (event) => {
+      const icao = (event.features?.[0]?.properties as { icao?: string } | undefined)?.icao;
+      if (icao) window.location.href = `/tools/metar?station=${encodeURIComponent(icao)}`;
+    });
 
     const counts = MAP_ORDER.map((category) => [category, stations.filter((s) => s[3] === category).length] as const);
     legend.replaceChildren(
@@ -1035,62 +1035,12 @@ const pageTitle = report?.station
         item.append(dot, `${category} ${count.toLocaleString('en-US')}`);
         return item;
       }),
+      Object.assign(document.createElement('span'), { className: 'wx-map-total', textContent: `${stations.length.toLocaleString('en-US')} stations worldwide` }),
     );
-    canvas.setAttribute(
+    container.setAttribute(
       'aria-label',
-      `Map of ${stations.length.toLocaleString('en-US')} reporting stations in North America: ${counts.map(([c, n]) => `${n} ${c}`).join(', ')}.`,
+      `Map of ${stations.length.toLocaleString('en-US')} reporting stations: ${counts.map(([c, n]) => `${n} ${c}`).join(', ')}. The airport lists below show the same information.`,
     );
-
-    const nearest = (event: PointerEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      const x = event.clientX - rect.left;
-      const y = event.clientY - rect.top;
-      let best: { x: number; y: number; s: MapStation } | null = null;
-      let bestDist = 12 * 12;
-      for (const p of points) {
-        const d = (p.x - x) ** 2 + (p.y - y) ** 2;
-        if (d < bestDist) {
-          bestDist = d;
-          best = p;
-        }
-      }
-      return best;
-    };
-
-    canvas.addEventListener('pointermove', (event) => {
-      const hit = nearest(event);
-      if (!hit) {
-        tip.hidden = true;
-        return;
-      }
-      const [icao, , , category, vis, plus, ceiling] = hit.s;
-      const label = document.createElement('strong');
-      label.textContent = icao;
-      const detail = [
-        category,
-        vis != null ? `${fractionText(vis)}${plus ? '+' : ''} sm` : null,
-        ceiling != null ? `ceiling ${ceiling.toLocaleString('en-US')} ft` : 'no ceiling',
-      ].filter(Boolean).join(', ');
-      tip.replaceChildren(label, detail);
-      tip.style.left = `${hit.x}px`;
-      tip.style.top = `${hit.y}px`;
-      tip.hidden = false;
-    });
-    canvas.addEventListener('pointerleave', () => {
-      tip.hidden = true;
-    });
-    canvas.addEventListener('click', (event) => {
-      const hit = nearest(event);
-      if (hit) window.location.href = `/tools/metar?station=${encodeURIComponent(hit.s[0])}`;
-    });
-
-    draw();
-    let resizeTimer: number | undefined;
-    window.addEventListener('resize', () => {
-      window.clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(draw, 120);
-    });
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => window.setTimeout(draw, 0));
   }
 
   setupWxConsole();

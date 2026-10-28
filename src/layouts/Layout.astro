@@ -7,7 +7,15 @@ interface Props {
   currentPath?: string;
 }
 
-const { title = 'Flight tools', description = 'Free flight-planning tools.' } = Astro.props;
+const { title = 'Flight tools', description = 'Free flight-planning tools.', currentPath = Astro.url.pathname } = Astro.props;
+
+const tools = [
+  { href: '/tools/metar', label: 'METAR & TAF' },
+  { href: '/tools/notam', label: 'NOTAM' },
+  { href: '/tools/e6b', label: 'E6B' },
+  { href: '/tools/weight-balance', label: 'Weight & balance' },
+  { href: '/tools/takeoff-landing-distance', label: 'Takeoff & landing' },
+];
 ---
 
 <!doctype html>
@@ -18,6 +26,8 @@ const { title = 'Flight tools', description = 'Free flight-planning tools.' } = 
     <title>{title}</title>
     <meta name="description" content={description} />
     <meta name="color-scheme" content="light dark" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <script is:inline>
       (function () {
         var media = window.matchMedia('(prefers-color-scheme: dark)');
@@ -31,11 +41,124 @@ const { title = 'Flight tools', description = 'Free flight-planning tools.' } = 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:wght@400;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@700&family=Inter:wght@400;500;600;700&family=Source+Serif+4:wght@400;600&display=swap"
       rel="stylesheet"
     />
   </head>
   <body>
+    <header class="ft-header">
+      <div class="ft-header-inner container-site px-site">
+        <a href="/tools" class="ft-brand" aria-label="Flight tools home">
+          <img src="/favicon.svg" alt="" width="22" height="22" />
+          <span>Flight tools</span>
+        </a>
+        <nav class="ft-nav" aria-label="Tools">
+          {tools.map((tool) => (
+            <a href={tool.href} aria-current={currentPath.startsWith(tool.href) ? 'page' : undefined}>{tool.label}</a>
+          ))}
+        </nav>
+      </div>
+    </header>
     <main><slot /></main>
+    <footer class="ft-footer">
+      <div class="ft-footer-inner container-site px-site">
+        <p>
+          Built by <a href="https://aviation.foundation">aviation.foundation</a>. The source is on
+          <a href="https://github.com/aviationfoundation/flight-tools">GitHub</a> under the MIT licence.
+        </p>
+        <p>
+          Weather from NOAA's Aviation Weather Center. Runways from OurAirports. Maps from OpenFreeMap
+          and OpenStreetMap contributors. These are planning aids; use an official briefing before flight.
+        </p>
+      </div>
+    </footer>
   </body>
 </html>
+
+<style>
+  .ft-header {
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+
+  .ft-header-inner {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    min-height: 56px;
+  }
+
+  .ft-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    flex: none;
+    color: var(--fg);
+    text-decoration: none;
+    font-family: var(--font-archivo);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  .ft-brand img { display: block; }
+
+  :global([data-theme='dark']) .ft-brand img { filter: invert(1) brightness(1.4); }
+
+  .ft-nav {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin-left: auto;
+  }
+
+  .ft-nav::-webkit-scrollbar { display: none; }
+
+  .ft-nav a {
+    flex: none;
+    padding: 8px 10px;
+    font-size: 13.5px;
+    color: var(--text-muted);
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+  }
+
+  .ft-nav a:hover { color: var(--fg); }
+
+  .ft-nav a[aria-current='page'] {
+    color: var(--fg);
+    font-weight: 600;
+    border-bottom-color: var(--fg);
+  }
+
+  .ft-footer {
+    margin-top: 72px;
+    border-top: 1px solid var(--border);
+    padding: 28px 0 40px;
+  }
+
+  .ft-footer-inner p {
+    margin: 0 0 8px;
+    max-width: 78ch;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--text-muted);
+  }
+
+  .ft-footer-inner a { color: var(--fg); }
+
+  @media (max-width: 720px) {
+    .ft-header-inner {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0;
+      padding-top: 12px;
+    }
+
+    .ft-nav {
+      margin: 6px -16px 0;
+      padding: 0 12px;
+    }
+  }
+</style>
