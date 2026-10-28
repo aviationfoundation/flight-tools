@@ -1,6 +1,5 @@
 export const prerender = false;
 
-import { env } from 'cloudflare:workers';
 import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { fetchObservation } from '../../../lib/wx-source';
@@ -30,7 +29,7 @@ export const GET: APIRoute = async ({ request }) => {
   if (!id) return json({ error: 'invalid_station' }, 400);
 
   const bundle = await fetchObservation(id);
-  const known = env.DB ? await getStation(env.DB, id) : null;
+  const known = await getStation(id);
 
   return json(
     {

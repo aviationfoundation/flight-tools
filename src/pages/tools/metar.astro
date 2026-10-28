@@ -1,14 +1,14 @@
 ---
 export const prerender = false;
 
-import { env } from 'cloudflare:workers';
 import Layout from '../../layouts/Layout.astro';
 import MetarDecoder from '../../components/MetarDecoder.astro';
 import { decodeMetar, decodeTaf, formatMiles, type DecodedMetar, type DecodedTaf } from '../../lib/metar';
 import { CATEGORY_MEANING, type FlightCategory } from '../../lib/metar-compute';
 import { fetchBoard, fetchObservation } from '../../lib/wx-source';
-import { BOARD_STATIONS } from '../../lib/board-stations';
-import { getStation, normalizeStationId, searchStations } from '../../lib/wx-stations';
+import BOARD_STATIONS from '../../data/board-stations.json';
+import { getRunways, getStation, normalizeStationId, searchStations, type RunwayData } from '../../lib/wx-stations';
+import { readJson } from '../../lib/data-store';
 
 const params = Astro.url.searchParams;
 const stationParam = (params.get('station') ?? '').trim();
@@ -73,8 +73,8 @@ if (rawParam) {
 
   if (!report) {
     errorMessage = 'That paste has no METAR in it. Include the METAR line, or search for the station instead.';
-  } else if (!stationInfo && report.station && env.DB) {
-    const known = await getStation(env.DB, report.station);
+  } else if (!stationInfo && report.station) {
+    const known = await getStation(report.station);
     if (known) {
       stationInfo = { icao: known.icao, name: known.name, lat: known.lat, lon: known.lon, elevationFt: known.elevationFt };
     }
@@ -83,13 +83,13 @@ if (rawParam) {
   decodedFrom = 'live';
   let id = normalizeStationId(stationParam);
 
-  if (!/^[A-Za-z0-9]{3,4}$/.test(stationParam) && env.DB) {
-    const [match] = await searchStations(env.DB, stationParam, 1);
+  if (!/^[A-Za-z0-9]{3,4}$/.test(stationParam)) {
+    const [match] = await searchStations(stationParam, 1);
     if (match) id = match.icao;
   }
 
   if (!id || id.length < 3) {
-    errorMessage = 'That isn\'t an airport code. Use a four-letter ICAO code such as KJFK or EGLL.';
+    errorMessage = 'No airport matched that. Try a four-letter ICAO code such as KJFK, or part of the airport name.';
   } else {
     const bundle = await fetchObservation(id);
     fetchedAt = bundle.fetchedAt;
@@ -97,8 +97,8 @@ if (rawParam) {
       report = decodeMetar(bundle.metarRaw);
       if (bundle.tafRaw) taf = decodeTaf(bundle.tafRaw);
       stationInfo = bundle.station;
-      if (!stationInfo?.elevationFt && env.DB) {
-        const known = await getStation(env.DB, id);
+      if (!stationInfo?.elevationFt) {
+        const known = await getStation(id);
         if (known) {
           stationInfo = {
             icao: stationInfo?.icao ?? known.icao,
@@ -151,7 +151,18 @@ function shortPlace(name: string | null, icao: string): string {
 
 let board: Array<{ category: BoardCategory; items: BoardItem[] }> | null = null;
 let boardCount = 0;
-if (!report && !errorMessage && !stationParam && !rawParam) {
+const BOARD_MAX_AGE_MS = 20 * 60 * 1000;
+const showBoard = !report && !errorMessage && !stationParam && !rawParam;
+
+if (showBoard) {
+  const published = await readJson<{ generated: string; count: number; columns: Array<{ category: BoardCategory; items: BoardItem[] }> }>('board.json', 60 * 1000);
+  if (published && Date.now() - new Date(published.generated).getTime() < BOARD_MAX_AGE_MS) {
+    board = published.columns;
+    boardCount = published.count;
+  }
+}
+
+if (showBoard && !board) {
   const rows = await fetchBoard(BOARD_STATIONS);
   if (rows && rows.length) {
     const byIcao = new Map(rows.map((row) => [row.icao, row]));
@@ -169,6 +180,8 @@ if (!report && !errorMessage && !stationParam && !rawParam) {
     board = BOARD_ORDER.map((category) => ({ category, items: groups.get(category)! }));
   }
 }
+
+const runways: RunwayData[] = report?.station ? await getRunways(report.station) : [];
 
 const pageTitle = report?.station
   ? `${report.station} METAR decoded · aviation.foundation`
@@ -201,7 +214,7 @@ const pageTitle = report?.station
               id="wx-station"
               name="station"
               class="wx-input num"
-              placeholder="Airport code, like KJFK or EGLL"
+              placeholder="Airport code or name, like CYVR or Vancouver"
               value={decodedFrom === 'live' ? stationParam : ''}
               maxlength="40"
               spellcheck="false"
@@ -260,7 +273,7 @@ const pageTitle = report?.station
     )}
 
     {report ? (
-      <MetarDecoder report={report} taf={taf} station={stationInfo} fetchedAt={fetchedAt} />
+      <MetarDecoder report={report} taf={taf} station={stationInfo} fetchedAt={fetchedAt} runways={runways} />
     ) : (
       !errorMessage && (
         <section class="wx-board" aria-labelledby="wx-board-title">
@@ -268,9 +281,16 @@ const pageTitle = report?.station
             <>
               <h2 class="wx-board-title" id="wx-board-title">Where it's VFR, MVFR, IFR and LIFR right now</h2>
               <p class="wx-board-sub">
-                {boardCount} airports across Canada and the US, plus a few major hubs elsewhere, from
-                each one's latest METAR. Select one to decode it.
+                Every reporting station in North America on the map, and {boardCount} major airports
+                listed below, from each one's latest METAR. Select any of them to decode it.
               </p>
+              <figure class="wx-map" data-wx-map hidden>
+                <div class="wx-map-frame">
+                  <canvas class="wx-map-canvas" role="img" aria-label="Map of reporting stations in North America, coloured by flight category"></canvas>
+                  <div class="wx-map-tip" data-wx-map-tip hidden></div>
+                </div>
+                <figcaption class="wx-map-legend" data-wx-map-legend></figcaption>
+              </figure>
               <div class="wx-cat-cols">
                 {board.map((column) => (
                   <section class={`wx-cat-col cat-${column.category.toLowerCase()}`} aria-labelledby={`wx-cat-${column.category}`}>
@@ -597,130 +617,67 @@ const pageTitle = report?.station
     color: var(--text-subtle);
   }
 
-  .wx-board-sub {
-    margin: 0 0 20px;
-    font-size: 13.5px;
-    color: var(--text-muted);
-    max-width: 64ch;
+  .wx-map {
+    --map-vfr: #17663B;
+    --map-mvfr: #1F5FA8;
+    --map-ifr: #C0362A;
+    --map-lifr: #8E3AA4;
+    --map-grid: rgba(17, 17, 17, 0.07);
+    margin: 0 0 18px;
   }
 
-  .wx-cat-cols {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
-    align-items: start;
+  :global([data-theme='dark']) .wx-map {
+    --map-vfr: #6FCF97;
+    --map-mvfr: #7FA8D6;
+    --map-ifr: #F27A70;
+    --map-lifr: #D59BE2;
+    --map-grid: rgba(255, 255, 255, 0.07);
   }
 
-  .wx-cat-col {
-    --band: #3C4349;
+  .wx-map-frame {
+    position: relative;
     background: var(--surface-card);
     border: 1px solid var(--border);
   }
 
-  .wx-cat-col.cat-vfr { --band: #17663B; }
-  .wx-cat-col.cat-mvfr { --band: #0B3F73; }
-  .wx-cat-col.cat-ifr { --band: #A3261B; }
-  .wx-cat-col.cat-lifr { --band: #6B2A7C; }
-
-  .wx-cat-head {
-    background: var(--band);
-    color: #FFFFFF;
-    padding: 16px 16px 14px;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: baseline;
-    gap: 4px 12px;
+  .wx-map-canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 2 / 1;
+    cursor: crosshair;
   }
 
-  .wx-cat-name {
-    font-family: var(--font-archivo);
-    font-size: 30px;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    line-height: 1;
-    margin: 0;
-  }
-
-  .wx-cat-count {
-    font-family: var(--font-archivo);
-    font-size: 30px;
-    font-weight: 700;
-    line-height: 1;
-    opacity: 0.6;
-  }
-
-  .wx-cat-def {
-    grid-column: 1 / -1;
-    margin: 6px 0 0;
+  .wx-map-tip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--fg);
+    color: var(--bg);
     font-size: 12px;
-    line-height: 1.45;
-    color: rgba(255, 255, 255, 0.8);
-  }
-
-  .wx-cat-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-
-  .wx-cat-list li + li { border-top: 1px solid var(--border); }
-
-  .wx-cat-list a {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 2px 10px;
-    padding: 10px 16px;
-    color: var(--fg);
-    text-decoration: none;
-  }
-
-  .wx-cat-list a:hover { background: var(--surface-subtle); }
-  .wx-cat-list a:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
-
-  .wx-cat-icao {
-    font-family: var(--font-archivo);
-    font-weight: 700;
-    font-size: 15px;
-  }
-
-  .wx-cat-place {
-    font-size: 12.5px;
-    color: var(--text-muted);
+    line-height: 1.4;
+    padding: 6px 9px;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    align-self: center;
+    transform: translate(-50%, calc(-100% - 10px));
   }
 
-  .wx-cat-why {
-    grid-column: 1 / -1;
-    font-size: 12px;
-    color: var(--text-subtle);
-  }
+  .wx-map-tip :global(strong) { font-family: var(--font-archivo); margin-right: 6px; }
 
-  .wx-cat-more { border-top: 1px solid var(--border); }
-
-  .wx-cat-more > summary {
-    cursor: pointer;
-    padding: 10px 16px;
+  .wx-map-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    margin-top: 10px;
     font-size: 12.5px;
     color: var(--text-muted);
   }
 
-  .wx-cat-more > summary:hover { color: var(--fg); }
-  .wx-cat-more[open] > summary { border-bottom: 1px solid var(--border); }
+  .wx-map-legend :global(span) { display: inline-flex; align-items: center; gap: 6px; }
 
-  .wx-cat-empty {
-    margin: 0;
-    padding: 14px 16px;
-    font-size: 12.5px;
-    color: var(--text-subtle);
-  }
-
-  .wx-board-foot {
-    margin: 14px 0 0;
-    font-size: 12px;
-    color: var(--text-subtle);
+  .wx-map-legend :global(i) {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--dot);
   }
 
   @media (max-width: 1080px) {
@@ -813,6 +770,8 @@ const pageTitle = report?.station
 </style>
 
 <script>
+  import { searchIndex, type StationTuple } from '../../lib/station-search';
+
   const RECENT_KEY = 'avi_wx_recent';
   const MAX_RECENT = 6;
 
@@ -916,17 +875,21 @@ const pageTitle = report?.station
     };
 
     const search = async (query: string) => {
-      try {
-        const response = await fetch(`/api/wx/stations?q=${encodeURIComponent(query)}`);
-        if (!response.ok) return close();
-        const data = await response.json();
-        items = Array.isArray(data.items) ? data.items : [];
-        cursor = -1;
-        render();
-      } catch {
-        close();
-      }
+      const index = await loadStationIndex();
+      if (!index) return close();
+      items = searchIndex(index, query, 8).map((station) => ({
+        icao: station.icao,
+        name: station.name,
+        city: station.region,
+        country: station.country,
+      }));
+      cursor = -1;
+      render();
     };
+
+    input.addEventListener('focus', () => {
+      loadStationIndex();
+    }, { once: true });
 
     input.addEventListener('input', () => {
       const query = input.value.trim();
@@ -954,6 +917,186 @@ const pageTitle = report?.station
     input.addEventListener('blur', () => window.setTimeout(close, 120));
   }
 
+  let stationIndex: Promise<StationTuple[] | null> | null = null;
+
+  function loadStationIndex(): Promise<StationTuple[] | null> {
+    if (!stationIndex) {
+      stationIndex = fetch('/data/stations.json')
+        .then((response) => (response.ok ? response.json() : null))
+        .then((data) => (data && Array.isArray(data.stations) ? (data.stations as StationTuple[]) : null))
+        .catch(() => null);
+      stationIndex.then((index) => {
+        if (!index) stationIndex = null;
+      });
+    }
+    return stationIndex;
+  }
+
+  type MapStation = [string, number, number, 'VFR' | 'MVFR' | 'IFR' | 'LIFR', number | null, number, number | null, string];
+
+  const MAP_BOUNDS = { west: -170, east: -50, south: 14, north: 72 };
+  const MAP_ORDER: MapStation[3][] = ['VFR', 'MVFR', 'IFR', 'LIFR'];
+
+  function fractionText(value: number): string {
+    if (Math.abs(value - Math.round(value)) < 0.01) return String(Math.round(value));
+    const whole = Math.floor(value);
+    const parts: Array<[number, string]> = [[0.125, '1/8'], [0.25, '1/4'], [0.375, '3/8'], [0.5, '1/2'], [0.625, '5/8'], [0.75, '3/4'], [0.875, '7/8']];
+    const frac = parts.reduce((best, p) => (Math.abs(p[0] - (value - whole)) < Math.abs(best[0] - (value - whole)) ? p : best))[1];
+    return whole ? `${whole} ${frac}` : frac;
+  }
+
+  async function setupMap() {
+    const figure = document.querySelector<HTMLElement>('[data-wx-map]');
+    if (!figure) return;
+    const canvas = figure.querySelector<HTMLCanvasElement>('canvas');
+    const tip = figure.querySelector<HTMLElement>('[data-wx-map-tip]');
+    const legend = figure.querySelector<HTMLElement>('[data-wx-map-legend]');
+    if (!canvas || !tip || !legend) return;
+
+    let stations: MapStation[];
+    try {
+      const response = await fetch('/data/categories.json');
+      if (!response.ok) return;
+      const data = await response.json();
+      stations = (data.stations as MapStation[]).filter(
+        (s) => s[2] >= MAP_BOUNDS.west && s[2] <= MAP_BOUNDS.east && s[1] >= MAP_BOUNDS.south && s[1] <= MAP_BOUNDS.north,
+      );
+    } catch {
+      return;
+    }
+    if (!stations.length) return;
+    figure.hidden = false;
+
+    const midLat = ((MAP_BOUNDS.north + MAP_BOUNDS.south) / 2) * (Math.PI / 180);
+    const spanX = (MAP_BOUNDS.east - MAP_BOUNDS.west) * Math.cos(midLat);
+    const spanY = MAP_BOUNDS.north - MAP_BOUNDS.south;
+    let points: Array<{ x: number; y: number; s: MapStation }> = [];
+
+    const draw = () => {
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.round(width * ratio);
+      canvas.height = Math.round(height * ratio);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+
+      const scale = Math.min(width / spanX, height / spanY);
+      const offsetX = (width - spanX * scale) / 2;
+      const offsetY = (height - spanY * scale) / 2;
+      const project = (lat: number, lon: number) => ({
+        x: offsetX + (lon - MAP_BOUNDS.west) * Math.cos(midLat) * scale,
+        y: offsetY + (MAP_BOUNDS.north - lat) * scale,
+      });
+
+      const style = getComputedStyle(figure);
+      ctx.strokeStyle = style.getPropertyValue('--map-grid').trim();
+      ctx.lineWidth = 1;
+      for (let lon = -160; lon <= -60; lon += 20) {
+        const a = project(MAP_BOUNDS.north, lon);
+        const b = project(MAP_BOUNDS.south, lon);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+      for (let lat = 20; lat <= 70; lat += 10) {
+        const a = project(lat, MAP_BOUNDS.west);
+        const b = project(lat, MAP_BOUNDS.east);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+
+      const radius = width < 600 ? 1.6 : 2.3;
+      points = [];
+      for (const category of MAP_ORDER) {
+        ctx.fillStyle = style.getPropertyValue(`--map-${category.toLowerCase()}`).trim();
+        for (const s of stations) {
+          if (s[3] !== category) continue;
+          const p = project(s[1], s[2]);
+          points.push({ ...p, s });
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, category === 'VFR' ? radius : radius + 0.7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    };
+
+    const counts = MAP_ORDER.map((category) => [category, stations.filter((s) => s[3] === category).length] as const);
+    legend.replaceChildren(
+      ...counts.map(([category, count]) => {
+        const item = document.createElement('span');
+        const dot = document.createElement('i');
+        dot.style.setProperty('--dot', `var(--map-${category.toLowerCase()})`);
+        item.append(dot, `${category} ${count.toLocaleString('en-US')}`);
+        return item;
+      }),
+    );
+    canvas.setAttribute(
+      'aria-label',
+      `Map of ${stations.length.toLocaleString('en-US')} reporting stations in North America: ${counts.map(([c, n]) => `${n} ${c}`).join(', ')}.`,
+    );
+
+    const nearest = (event: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      let best: { x: number; y: number; s: MapStation } | null = null;
+      let bestDist = 12 * 12;
+      for (const p of points) {
+        const d = (p.x - x) ** 2 + (p.y - y) ** 2;
+        if (d < bestDist) {
+          bestDist = d;
+          best = p;
+        }
+      }
+      return best;
+    };
+
+    canvas.addEventListener('pointermove', (event) => {
+      const hit = nearest(event);
+      if (!hit) {
+        tip.hidden = true;
+        return;
+      }
+      const [icao, , , category, vis, plus, ceiling] = hit.s;
+      const label = document.createElement('strong');
+      label.textContent = icao;
+      const detail = [
+        category,
+        vis != null ? `${fractionText(vis)}${plus ? '+' : ''} sm` : null,
+        ceiling != null ? `ceiling ${ceiling.toLocaleString('en-US')} ft` : 'no ceiling',
+      ].filter(Boolean).join(', ');
+      tip.replaceChildren(label, detail);
+      tip.style.left = `${hit.x}px`;
+      tip.style.top = `${hit.y}px`;
+      tip.hidden = false;
+    });
+    canvas.addEventListener('pointerleave', () => {
+      tip.hidden = true;
+    });
+    canvas.addEventListener('click', (event) => {
+      const hit = nearest(event);
+      if (hit) window.location.href = `/tools/metar?station=${encodeURIComponent(hit.s[0])}`;
+    });
+
+    draw();
+    let resizeTimer: number | undefined;
+    window.addEventListener('resize', () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(draw, 120);
+    });
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => window.setTimeout(draw, 0));
+  }
+
   setupWxConsole();
-  document.addEventListener('astro:after-swap', setupWxConsole);
+  setupMap();
+  document.addEventListener('astro:after-swap', () => {
+    setupWxConsole();
+    setupMap();
+  });
 </script>

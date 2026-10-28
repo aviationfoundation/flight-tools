@@ -3,5 +3,6 @@
   "name": "flight-tools",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
-  "routes": [{ "pattern": "tools.aviation.foundation", "custom_domain": true }]
+  "routes": [{ "pattern": "tools.aviation.foundation", "custom_domain": true }],
+  "r2_buckets": [{ "binding": "DATA", "bucket_name": "flight-tools-data" }]
 }

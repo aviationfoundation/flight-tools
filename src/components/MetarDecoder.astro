@@ -15,6 +15,7 @@ import {
   CATEGORY_MEANING,
   type FlightCategory,
 } from '../lib/metar-compute';
+import type { RunwayData } from '../lib/wx-stations';
 
 interface StationInfo {
   icao: string;
@@ -29,9 +30,10 @@ interface Props {
   taf: DecodedTaf | null;
   station: StationInfo | null;
   fetchedAt: string | null;
+  runways?: RunwayData[];
 }
 
-const { report, taf, station, fetchedAt } = Astro.props;
+const { report, taf, station, fetchedAt, runways = [] } = Astro.props;
 
 const now = new Date();
 const observedAt = resolveTime(report.time, now);
@@ -49,7 +51,34 @@ const spread =
 const flags = advisories(report, elevationFt);
 
 const defaultRunway = bestRunway(report.wind);
-const components = windComponents(report.wind, defaultRunway * 10);
+
+interface RunwayEnd {
+  ident: string;
+  heading: number;
+  runway: number;
+  approximate: boolean;
+}
+
+const runwayEnds: RunwayEnd[] = runways.flatMap((r, i) => [
+  { ident: r.le, heading: r.headingTrue, runway: i, approximate: r.approximate },
+  ...(r.he ? [{ ident: r.he, heading: (r.headingTrue + 180) % 360, runway: i, approximate: r.approximate }] : []),
+]);
+const hasRunwayData = runwayEnds.length > 0;
+
+let selectedEnd = 0;
+if (hasRunwayData) {
+  let bestHead = -Infinity;
+  runwayEnds.forEach((end, i) => {
+    const head = windComponents(report.wind, end.heading)?.headwindKt;
+    if (head != null && head > bestHead) {
+      bestHead = head;
+      selectedEnd = i;
+    }
+  });
+}
+
+const activeHeading = hasRunwayData ? runwayEnds[selectedEnd].heading : defaultRunway * 10;
+const components = windComponents(report.wind, activeHeading);
 
 function pad2(n: number): string {
   return n < 10 ? `0${n}` : String(n);
@@ -147,6 +176,31 @@ if (report.wind?.varyFrom != null && report.wind.varyTo != null) {
   const b = polar(to, R);
   varyWedge = `M ${CX} ${CY} L ${a.x.toFixed(2)} ${a.y.toFixed(2)} A ${R} ${R} 0 ${sweep > 180 ? 1 : 0} 1 ${b.x.toFixed(2)} ${b.y.toFixed(2)} Z`;
 }
+
+const runwayLabels = (() => {
+  const groups: Array<{ heading: number; idents: string[] }> = [];
+  for (const end of runwayEnds) {
+    const group = groups.find((g) => Math.abs(((g.heading - end.heading + 540) % 360) - 180) < 4);
+    if (group) group.idents.push(end.ident);
+    else groups.push({ heading: end.heading, idents: [end.ident] });
+  }
+  return groups.map((g) => {
+    const bearingDeg = (g.heading + 180) % 360;
+    const p = polar(bearingDeg, R - 22);
+    const numbers = new Set(g.idents.map((id) => id.replace(/[LCR]$/, '')));
+    const text = numbers.size === 1 && g.idents.length > 1
+      ? `${[...numbers][0]}${g.idents.map((id) => id.match(/[LCR]$/)?.[0] ?? '').filter(Boolean).join('/')}`
+      : g.idents.join('/');
+    return {
+      x: p.x,
+      y: p.y + 3.5,
+      text,
+      idents: g.idents,
+    };
+  });
+})();
+
+const thresholdPoint = hasRunwayData ? polar((runwayEnds[selectedEnd].heading + 180) % 360, R - 45) : null;
 
 const hasWindArrow = !!report.wind && !report.wind.calm && !report.wind.variable && report.wind.directionDeg != null;
 
@@ -445,7 +499,7 @@ const faqItems = [
   },
   {
     q: 'Why does the crosswind differ from what the tower says?',
-    a: 'METAR winds are referenced to true north, and runway numbers are magnetic. This page does not correct for magnetic variation, so at fields with large variation the crosswind is approximate. Tower and ATIS winds are already magnetic.',
+    a: 'METAR winds are referenced to true north, and tower and ATIS winds are magnetic. Where runway data is available (from OurAirports), the crosswind uses each runway\'s true heading, so it matches the METAR wind. Where it isn\'t, the heading comes from the runway number, which is magnetic, so the figure is approximate at fields with large magnetic variation.',
   },
   {
     q: 'What does a warning about the report itself mean?',
@@ -564,11 +618,36 @@ const faqItems = [
           <text x={point.x} y={point.y} class={`dial-label ${point.deg % 90 === 0 ? 'cardinal' : ''}`} text-anchor="middle">{point.label}</text>
         ))}
 
-        <g id="wx-runway-group" transform={`rotate(${defaultRunway * 10} ${CX} ${CY})`}>
-          <rect x={CX - 9} y={CY - (R - 18)} width="18" height={2 * (R - 18)} rx="1" class="dial-runway" />
-          <line x1={CX} y1={CY - (R - 26)} x2={CX} y2={CY + (R - 26)} class="dial-runway-centerline" />
-          <circle cx={CX} cy={CY + (R - 18)} r="3.2" class="dial-runway-threshold" />
-        </g>
+        {hasRunwayData ? (
+          <g class="dial-rwys">
+            {runways.map((r, i) => (
+              <g
+                class={`dial-rwy${i === runwayEnds[selectedEnd].runway ? ' is-selected' : ''}`}
+                data-rwy={i}
+                transform={`rotate(${r.headingTrue} ${CX} ${CY})`}
+              >
+                <rect x={CX - 6} y={CY - (R - 40)} width="12" height={2 * (R - 40)} rx="1" class="dial-runway" />
+                <line x1={CX} y1={CY - (R - 46)} x2={CX} y2={CY + (R - 46)} class="dial-runway-centerline" />
+              </g>
+            ))}
+            {runwayLabels.map((label) => (
+              <text
+                x={label.x}
+                y={label.y}
+                class={`dial-rwy-label num${label.idents.includes(runwayEnds[selectedEnd].ident) ? ' is-selected' : ''}`}
+                text-anchor="middle"
+                data-idents={label.idents.join(' ')}
+              >{label.text}</text>
+            ))}
+            {thresholdPoint && <circle id="wx-rwy-threshold" cx={thresholdPoint.x} cy={thresholdPoint.y} r="3.4" class="dial-runway-threshold" />}
+          </g>
+        ) : (
+          <g id="wx-runway-group" transform={`rotate(${defaultRunway * 10} ${CX} ${CY})`}>
+            <rect x={CX - 9} y={CY - (R - 18)} width="18" height={2 * (R - 18)} rx="1" class="dial-runway" />
+            <line x1={CX} y1={CY - (R - 26)} x2={CX} y2={CY + (R - 26)} class="dial-runway-centerline" />
+            <circle cx={CX} cy={CY + (R - 18)} r="3.2" class="dial-runway-threshold" />
+          </g>
+        )}
 
         {hasWindArrow && (
           <g id="wx-wind-arrow" transform={`rotate(${report.wind!.directionDeg} ${CX} ${CY})`}>
@@ -578,25 +657,47 @@ const faqItems = [
           </g>
         )}
 
-        <circle cx={CX} cy={CY} r="30" class="dial-hub" />
-        <text x={CX} y={CY + 2} class="dial-hub-value serif" text-anchor="middle">
+        <circle cx={CX} cy={CY} r={hasRunwayData ? 23 : 30} class="dial-hub" />
+        <text x={CX} y={CY + 2} class={`dial-hub-value serif${hasRunwayData ? ' is-compact' : ''}`} text-anchor="middle">
           {report.wind ? (report.wind.calm ? '0' : String(report.wind.speedKt ?? '-')) : '-'}
         </text>
-        <text x={CX} y={CY + 16} class="dial-hub-unit" text-anchor="middle">
+        <text x={CX} y={hasRunwayData ? CY + 13 : CY + 16} class="dial-hub-unit" text-anchor="middle">
           {report.wind?.gustKt != null ? `G${report.wind.gustKt} KT` : 'KT'}
         </text>
       </svg>
 
-      <div class="wx-runway-picker">
-        <button type="button" class="wx-step" data-runway-step="-1" aria-label="Previous runway heading">−</button>
-        <div class="wx-runway-readout">
-          <span class="col">Runway</span>
-          <span class="wx-runway-id num" data-runway-label>{pad2(defaultRunway)}</span>
-          <span class="wx-runway-hdg num" data-runway-hdg>{pad2(defaultRunway * 10)}°</span>
+      {hasRunwayData ? (
+        <div class="wx-rwy-picker">
+          <div class="wx-rwy-ends" role="radiogroup" aria-label="Runway">
+            {runwayEnds.map((end, i) => (
+              <button
+                type="button"
+                role="radio"
+                class="wx-rwy-end num"
+                aria-checked={i === selectedEnd ? 'true' : 'false'}
+                tabindex={i === selectedEnd ? 0 : -1}
+                data-end-heading={end.heading}
+                data-end-runway={end.runway}
+                data-end-approx={end.approximate ? '1' : '0'}
+              >{end.ident}</button>
+            ))}
+          </div>
+          <p class="wx-rwy-note num" data-rwy-note>
+            Runway {runwayEnds[selectedEnd].ident}, {Math.round(runwayEnds[selectedEnd].heading)}° true{runwayEnds[selectedEnd].approximate ? ', heading estimated from its number' : ''}
+          </p>
         </div>
-        <button type="button" class="wx-step" data-runway-step="1" aria-label="Next runway heading">+</button>
-        <button type="button" class="wx-into-wind" data-runway-best={defaultRunway}>Into wind</button>
-      </div>
+      ) : (
+        <div class="wx-runway-picker">
+          <button type="button" class="wx-step" data-runway-step="-1" aria-label="Previous runway heading">−</button>
+          <div class="wx-runway-readout">
+            <span class="col">Runway</span>
+            <span class="wx-runway-id num" data-runway-label>{pad2(defaultRunway)}</span>
+            <span class="wx-runway-hdg num" data-runway-hdg>{pad2(defaultRunway * 10)}°</span>
+          </div>
+          <button type="button" class="wx-step" data-runway-step="1" aria-label="Next runway heading">+</button>
+          <button type="button" class="wx-into-wind" data-runway-best={defaultRunway}>Into wind</button>
+        </div>
+      )}
 
       <dl class="wx-components" data-wind-components>
         <div class="wx-component">
@@ -1329,11 +1430,57 @@ const faqItems = [
   .dial-runway { fill: var(--fg); opacity: 0.13; }
   .dial-runway-centerline { stroke: var(--fg); stroke-width: 1; stroke-dasharray: 5 6; opacity: 0.5; }
   .dial-runway-threshold { fill: var(--fg); opacity: 0.55; }
+  .dial-rwy .dial-runway { opacity: 0.1; }
+  .dial-rwy .dial-runway-centerline { opacity: 0.25; }
+  .dial-rwy.is-selected .dial-runway { opacity: 0.32; }
+  .dial-rwy.is-selected .dial-runway-centerline { opacity: 0.7; }
+  .dial-rwys .dial-runway-threshold { fill: var(--accent-blue); opacity: 1; }
+  .dial-rwy-label { font-size: 8.5px; font-weight: 600; fill: var(--text-muted); }
+  .dial-rwy-label.is-selected { fill: var(--fg); font-weight: 700; }
+
+  .wx-rwy-picker { margin-top: 4px; }
+
+  .wx-rwy-ends {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .wx-rwy-end {
+    min-width: 46px;
+    min-height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--fg);
+    font-family: var(--font-archivo);
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+  }
+
+  .wx-rwy-end:hover { border-color: var(--border-strong); }
+
+  .wx-rwy-end[aria-checked='true'] {
+    background: var(--fg);
+    border-color: var(--fg);
+    color: var(--bg);
+  }
+
+  .wx-rwy-end:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+
+  .wx-rwy-note {
+    margin: 10px 0 0;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
   .dial-wind-shaft { stroke: var(--accent-blue); stroke-width: 2.4; }
   .dial-wind-head { fill: var(--accent-blue); }
   .dial-wind-tail { stroke: var(--accent-blue); stroke-width: 2.4; }
   .dial-hub { fill: var(--surface-card); stroke: var(--border); stroke-width: 1; }
   .dial-hub-value { font-size: 24px; fill: var(--fg); font-family: var(--font-serif); }
+  .dial-hub-value.is-compact { font-size: 19px; }
   .dial-hub-unit { font-size: 8.5px; fill: var(--text-muted); letter-spacing: 0.12em; font-weight: 600; }
 
   .wx-runway-picker {
@@ -2219,15 +2366,9 @@ const faqItems = [
 
       let runway = Number(panel.dataset.runway || '36');
 
-      const render = () => {
-        const heading = runway * 10;
-        if (label) label.textContent = String(runway).padStart(2, '0');
-        if (hdgLabel) hdgLabel.textContent = `${String(heading).padStart(3, '0')}°`;
-        if (runwayGroup) runwayGroup.setAttribute('transform', `rotate(${heading} 120 120)`);
-
+      const showComponents = (heading: number) => {
         const components = windComponents(wind, heading);
         if (!components) return;
-
         if (headValue) headValue.textContent = `${Math.abs(components.headwindKt).toFixed(1)} kt`;
         if (headNote) headNote.textContent = components.headwindKt >= 0 ? 'on the nose' : 'tailwind';
         if (headBar) headBar.style.width = `${Math.min(100, (Math.abs(components.headwindKt) / scale) * 100)}%`;
@@ -2239,21 +2380,69 @@ const faqItems = [
         }
       };
 
-      panel.querySelectorAll<HTMLButtonElement>('[data-runway-step]').forEach((button) => {
-        button.addEventListener('click', () => {
-          const step = Number(button.dataset.runwayStep);
-          runway = ((runway - 1 + step + 36) % 36) + 1;
+      const endButtons = Array.from(panel.querySelectorAll<HTMLButtonElement>('.wx-rwy-end'));
+      if (endButtons.length) {
+        const threshold = root.querySelector<SVGCircleElement>('#wx-rwy-threshold');
+        const note = panel.querySelector<HTMLElement>('[data-rwy-note]');
+        const selectEnd = (button: HTMLButtonElement, focus: boolean) => {
+          endButtons.forEach((b) => {
+            const on = b === button;
+            b.setAttribute('aria-checked', String(on));
+            b.tabIndex = on ? 0 : -1;
+          });
+          if (focus) button.focus();
+          const heading = Number(button.dataset.endHeading);
+          const runwayIndex = button.dataset.endRunway;
+          root.querySelectorAll<SVGGElement>('.dial-rwy').forEach((g) => {
+            g.classList.toggle('is-selected', g.dataset.rwy === runwayIndex);
+          });
+          if (threshold) {
+            const rad = (((heading + 180) % 360) * Math.PI) / 180;
+            threshold.setAttribute('cx', String(120 + Math.sin(rad) * 49));
+            threshold.setAttribute('cy', String(120 - Math.cos(rad) * 49));
+          }
+          root.querySelectorAll<SVGTextElement>('.dial-rwy-label').forEach((labelEl) => {
+            labelEl.classList.toggle('is-selected', (labelEl.dataset.idents ?? '').split(' ').includes(button.textContent ?? ''));
+          });
+          if (note) {
+            note.textContent = `Runway ${button.textContent}, ${Math.round(heading)}° true${button.dataset.endApprox === '1' ? ', heading estimated from its number' : ''}`;
+          }
+          showComponents(heading);
+        };
+        endButtons.forEach((button, i) => {
+          button.addEventListener('click', () => selectEnd(button, false));
+          button.addEventListener('keydown', (event) => {
+            if (!['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(event.key)) return;
+            event.preventDefault();
+            const step = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1;
+            selectEnd(endButtons[(i + step + endButtons.length) % endButtons.length], true);
+          });
+        });
+      } else {
+        const render = () => {
+          const heading = runway * 10;
+          if (label) label.textContent = String(runway).padStart(2, '0');
+          if (hdgLabel) hdgLabel.textContent = `${String(heading).padStart(3, '0')}°`;
+          if (runwayGroup) runwayGroup.setAttribute('transform', `rotate(${heading} 120 120)`);
+          showComponents(heading);
+        };
+
+        panel.querySelectorAll<HTMLButtonElement>('[data-runway-step]').forEach((button) => {
+          button.addEventListener('click', () => {
+            const step = Number(button.dataset.runwayStep);
+            runway = ((runway - 1 + step + 36) % 36) + 1;
+            render();
+          });
+        });
+
+        const best = panel.querySelector<HTMLButtonElement>('[data-runway-best]');
+        best?.addEventListener('click', () => {
+          runway = Number(best.dataset.runwayBest || '36');
           render();
         });
-      });
 
-      const best = panel.querySelector<HTMLButtonElement>('[data-runway-best]');
-      best?.addEventListener('click', () => {
-        runway = Number(best.dataset.runwayBest || '36');
         render();
-      });
-
-      render();
+      }
     }
 
     const setActive = (id: string | null, on: boolean) => {

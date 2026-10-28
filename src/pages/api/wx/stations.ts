@@ -1,6 +1,5 @@
 export const prerender = false;
 
-import { env } from 'cloudflare:workers';
 import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { searchStations } from '../../../lib/wx-stations';
@@ -24,7 +23,7 @@ export const GET: APIRoute = async ({ request }) => {
     });
   }
 
-  const items = env.DB ? await searchStations(env.DB, parsed.data.q, parsed.data.limit ?? 8) : [];
+  const items = await searchStations(parsed.data.q, parsed.data.limit ?? 8);
   return new Response(JSON.stringify({ items }), {
     status: 200,
     headers: {

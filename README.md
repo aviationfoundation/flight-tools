@@ -19,9 +19,20 @@ npm run dev
 
 Deploys to Cloudflare Workers with `npm run deploy` (needs `wrangler login` first). The METAR page fetches on the server, so it can't be a static export.
 
-## Known gaps
+## Data
 
-Station search (`/api/wx/stations`) was backed by a Cloudflare D1 table. There's no database here, so it returns nothing. Typing an ICAO code directly still works. The seed data is in `migrations/0016_wx_stations.sql`.
+The METAR page fetches live reports from aviationweather.gov. Everything else it shows, the station map, airport search and runway headings, comes from files built by `pipeline/build_data.py` and stored in Cloudflare R2:
+
+- `categories.json` and `board.json`: every reporting station's flight category, rebuilt every 5 minutes from NOAA's METAR cache.
+- `stations.json`: the airport search index, from NOAA's station list.
+- `runways/*.json`: runway ends and true headings, from [OurAirports](https://ourairports.com/data/) (public domain).
+
+```bash
+python3 pipeline/build_data.py categories --out ./data
+python3 pipeline/build_data.py reference --out ./data
+```
+
+With `--push`, the script uploads the files to `/api/internal/data`, which needs `FLIGHT_TOOLS_PUSH_TOKEN` to match the Worker's `DATA_PUSH_TOKEN` secret. Without the files the tools still work; the map, airport search and runway list just don't appear.
 
 ## Disclaimer
 
