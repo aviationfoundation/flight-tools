@@ -3,27 +3,42 @@ export const prerender = false;
 
 import Layout from '../../layouts/Layout.astro';
 import NotamDecoder from '../../components/NotamDecoder.astro';
-import { decodeNotam, decodeNotams, type DecodedNotam } from '../../lib/notam';
+import { decodeNotam, splitNotams, type DecodedNotam } from '../../lib/notam';
+import { allowDecode, readBodyLimited } from '../../lib/request-limits';
 
-const MAX_PASTE = 200000;
+const MAX_PASTE = 100_000;
+const MAX_BODY_BYTES = 400_000;
+const MAX_NOTAMS = 100;
 const params = Astro.url.searchParams;
 let rawParam = (params.get('raw') ?? '').trim();
+let errorMessage: string | null = null;
+
 if (Astro.request.method === 'POST') {
-  try {
-    const form = await Astro.request.formData();
-    rawParam = String(form.get('raw') ?? '').trim();
-  } catch {
-    rawParam = '';
+  const body = await readBodyLimited(Astro.request, MAX_BODY_BYTES);
+  if (body === null) {
+    errorMessage = `That paste is too long. Paste up to ${MAX_PASTE / 1000} KB at a time.`;
+    Astro.response.status = 413;
+  } else {
+    rawParam = (new URLSearchParams(body).get('raw') ?? '').trim();
   }
 }
 
-let errorMessage: string | null = null;
 if (rawParam.length > MAX_PASTE) {
   errorMessage = `That paste is ${Math.round(rawParam.length / 1000)} KB. Paste up to ${MAX_PASTE / 1000} KB at a time.`;
+  Astro.response.status = 413;
   rawParam = '';
 }
 
-const decodedList: DecodedNotam[] = rawParam ? decodeNotams(rawParam) : [];
+if (rawParam && !(await allowDecode(Astro.request))) {
+  errorMessage = 'That is a lot of decoding from one network in the last minute. Wait a minute and try again.';
+  Astro.response.status = 429;
+  Astro.response.headers.set('Retry-After', '60');
+  rawParam = '';
+}
+
+const chunks = rawParam ? splitNotams(rawParam) : [];
+const decodedList: DecodedNotam[] = chunks.slice(0, MAX_NOTAMS).map((chunk) => decodeNotam(chunk));
+const skipped = Math.max(0, chunks.length - MAX_NOTAMS);
 const decoded: DecodedNotam | null = decodedList[0] ?? null;
 const many = decodedList.length > 1;
 const errorCount = decodedList.filter((d) => d.issues.some((i) => i.severity === 'error')).length;
@@ -96,6 +111,7 @@ const exampleCards = examples.map((example) => {
           class="nt-textarea num"
           rows="6"
           spellcheck="false"
+          maxlength="100000"
           placeholder={'A0142/25 NOTAMN\nQ) KZDC/QMRLC/IV/NBO/A/000/999/3856N07727W005\nA) KIAD B) 2508310600 C) 2509302359 EST\nE) RWY 01L/19R CLSD DUE TO WIP.\nF) SFC G) UNL'}
         >{rawParam}</textarea>
         <div class="nt-paste-actions">
@@ -122,7 +138,8 @@ const exampleCards = examples.map((example) => {
     {many && (
       <nav class="nt-list" aria-label="NOTAMs in this paste">
         <p class="nt-list-lead">
-          {decodedList.length} NOTAMs in this paste{errorCount ? `, ${errorCount} with errors` : ''}.
+          {decodedList.length} NOTAMs decoded{errorCount ? `, ${errorCount} with errors` : ''}.
+          {skipped > 0 && ` The paste held ${chunks.length}, so the last ${skipped} were left out. Paste them separately.`}
         </p>
         <ol>
           {decodedList.map((d, i) => (

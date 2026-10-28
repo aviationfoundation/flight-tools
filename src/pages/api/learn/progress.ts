@@ -3,6 +3,7 @@ export const prerender = false;
 import type { APIRoute } from 'astro';
 import { getAccount, saveProgress } from '../../../lib/accounts';
 import { COURSE_ID, checkCount, lessonById } from '../../../lib/learn/course';
+import { readBodyLimited } from '../../../lib/request-limits';
 
 const MAX_BODY_BYTES = 512;
 
@@ -17,8 +18,8 @@ export const POST: APIRoute = async ({ request, url }) => {
   if (request.headers.get('Origin') !== url.origin) return reply(403, { error: 'forbidden' });
   if (!request.headers.get('Content-Type')?.includes('application/json')) return reply(415, { error: 'send_json' });
 
-  const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) return reply(413, { error: 'too_large' });
+  const text = await readBodyLimited(request, MAX_BODY_BYTES);
+  if (text === null) return reply(413, { error: 'too_large' });
   let body: { lesson?: unknown; correct?: unknown };
   try {
     body = JSON.parse(text);
