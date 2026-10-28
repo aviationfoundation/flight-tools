@@ -20,6 +20,7 @@ export interface TriageItem {
 
 export type Block =
   | { kind: 'p'; text: string }
+  | { kind: 'notice'; title?: string; text: string }
   | { kind: 'notam'; raw: string; marks?: Mark[]; caption?: string }
   | { kind: 'table'; head: string[]; rows: string[][] }
   | { kind: 'rule'; title: string; text: string }
@@ -71,23 +72,28 @@ export const LESSONS: Lesson[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'Charts and the AIP, the official book of a country\'s airports, airspace and procedures, are reissued on fixed cycles weeks apart. A runway closed for paving tomorrow, a crane put up this morning or a drone survey on Thursday can\'t wait for the next cycle, so the authority sends a NOTAM instead. Your preflight briefing collects the ones for your departure, destination and route.',
+        text: 'A NOTAM (Notice to Air Missions, historically Notice to Airmen) is an official notice issued by aviation authorities to alert pilots of temporary conditions, hazards, or facility changes that affect flight safety. Aeronautical charts and publications update on fixed 28-day cycles, but airport conditions change daily. When a runway closes for maintenance, a temporary crane goes up, or a navigation beacon fails, the authority issues a NOTAM to report it immediately. Your preflight briefing gathers the active notices for your departure, destination, and route.',
+      },
+      {
+        kind: 'notice',
+        title: 'Lesson scope',
+        text: 'Do not worry about memorizing abbreviations or decoding cryptic codes yet. The goal of this first lesson is simply to learn the physical layout of a NOTAM so you know where to look. Each following lesson takes one section at a time to explain what the codes and times mean.',
       },
       {
         kind: 'p',
-        text: 'Most countries write NOTAMs in the ICAO format, and that is where this course starts; lesson 8 covers the format the FAA uses inside the US. Every ICAO NOTAM has three parts: a first line that names it, a Q-line that sums it up in code, and lettered items from A) to G). Here is a runway closure at Vancouver. Tap or hover over each part.',
+        text: 'Most countries write NOTAMs in the standard ICAO format, which is where this course begins (lesson 8 covers the domestic FAA format used in the US). Every ICAO NOTAM has three main sections: an identification header, a coded qualifier line (the Q-line), and lettered body items from A) to G). Here is an example of a runway closure at Vancouver International. Tap or hover over each highlighted part to see what it is.',
       },
       {
         kind: 'notam',
         raw: RUNWAY,
         marks: [
-          { text: 'A1287/26 NOTAMN', label: 'Header', note: 'The NOTAM\'s name, A1287/26, and its type. N means new.' },
-          { text: 'Q) CZVR/QMRLC/IV/NBO/A/000/999/4911N12311W005', label: 'Q-line', note: 'The whole NOTAM in code, for the computers that sort briefings.' },
-          { text: 'A) CYVR', label: 'Where', note: 'Vancouver International, by its ICAO code.' },
-          { text: 'B) 2610300400', label: 'From', note: '30 October 2026, 04:00 UTC.' },
-          { text: 'C) 2611071400', label: 'Until', note: '7 November 2026, 14:00 UTC, the end of the last daily closure.' },
-          { text: 'D) DAILY 0400-1400', label: 'Schedule', note: 'Only between 04:00 and 14:00 UTC each day.' },
-          { text: 'E) RWY 08L/26R CLSD DUE TO REHABILITATION WORK.', label: 'What', note: 'The message: runway 08L/26R is closed for rebuilding.' },
+          { text: 'A1287/26 NOTAMN', label: 'Header', note: 'Notice identifier. Numbering, revisions, and cancellations are covered in Lesson 2.' },
+          { text: 'Q) CZVR/QMRLC/IV/NBO/A/000/999/4911N12311W005', label: 'Qualifier line', note: 'Qualifier line: standardized codes used by briefing systems to classify and filter the notice. Decoded in detail in Lesson 3.' },
+          { text: 'A) CYVR', label: 'Location', note: 'Location identifier: Vancouver International Airport (CYVR).' },
+          { text: 'B) 2610300400', label: 'Effective', note: 'Commencement date and time: 30 October 2026 at 04:00 UTC. Reading NOTAM times is covered in Lesson 4.' },
+          { text: 'C) 2611071400', label: 'Expiration', note: 'Expiration date and time: 7 November 2026 at 14:00 UTC.' },
+          { text: 'D) DAILY 0400-1400', label: 'Schedule', note: 'Active schedule: daily between 04:00 and 14:00 UTC. Lesson 5 covers recurring schedules.' },
+          { text: 'E) RWY 08L/26R CLSD DUE TO REHABILITATION WORK.', label: 'Notice text', note: 'Operational text: runway 08L/26R closed due to pavement rehabilitation work. Common contractions are covered in Lesson 6.' },
         ],
       },
       {

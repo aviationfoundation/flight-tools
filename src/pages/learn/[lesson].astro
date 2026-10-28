@@ -69,6 +69,11 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
               {numbered.map(({ block, number, position }) =>
                 block.kind === 'p' ? (
                   <p class="lp-p">{block.text}</p>
+                ) : block.kind === 'notice' ? (
+                  <aside class="lp-notice">
+                    {block.title && <p class="lp-notice-title">{block.title}</p>}
+                    <p class="lp-notice-text">{block.text}</p>
+                  </aside>
                 ) : block.kind === 'notam' ? (
                   <NotamFigure raw={block.raw} marks={block.marks} caption={block.caption} id={`${lesson.id}-f${position}`} />
                 ) : block.kind === 'table' ? (
@@ -207,6 +212,33 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
     font-size: 13.5px;
     font-weight: 600;
     white-space: nowrap;
+  }
+
+  .lp-notice {
+    margin: 26px 0 28px;
+    padding: 16px 20px;
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    border-left: 4px solid var(--warning);
+    border-radius: 2px;
+  }
+
+  .lp-notice-title {
+    margin: 0 0 4px;
+    font-family: var(--font-archivo);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--warning);
+  }
+
+  .lp-notice-text {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: 17px;
+    line-height: 1.6;
+    color: var(--fg);
   }
 
   .lp-rule {
