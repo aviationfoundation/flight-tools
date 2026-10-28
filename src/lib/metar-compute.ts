@@ -165,7 +165,7 @@ export function advisories(report: DecodedMetar, elevationFt: number | null): Ad
     out.push({
       tone: 'warning',
       title: 'Fog risk',
-      detail: `Temperature and dew point are within ${spread.toFixed(1)} °C. Radiation fog forms quickly at this spread.`,
+      detail: `Temperature and dew point are ${spread.toFixed(1)} °C apart. Fog can form quickly at this spread.`,
     });
   }
 

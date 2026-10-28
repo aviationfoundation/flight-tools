@@ -4,8 +4,9 @@ export const prerender = false;
 import { env } from 'cloudflare:workers';
 import Layout from '../../layouts/Layout.astro';
 import MetarDecoder from '../../components/MetarDecoder.astro';
-import { decodeMetar, decodeTaf, type DecodedMetar, type DecodedTaf } from '../../lib/metar';
-import { fetchObservation } from '../../lib/wx-source';
+import { decodeMetar, decodeTaf, visibilityShort, type DecodedMetar, type DecodedTaf } from '../../lib/metar';
+import { flightCategory, ceilingFt, type FlightCategory } from '../../lib/metar-compute';
+import { fetchBoard, fetchObservation } from '../../lib/wx-source';
 import { getStation, normalizeStationId, searchStations } from '../../lib/wx-stations';
 
 const params = Astro.url.searchParams;
@@ -70,7 +71,7 @@ if (rawParam) {
   }
 
   if (!report) {
-    errorMessage = 'That paste has no observation in it. Include the METAR line, or search for the station instead.';
+    errorMessage = 'That paste has no METAR in it. Include the METAR line, or search for the station instead.';
   } else if (!stationInfo && report.station && env.DB) {
     const known = await getStation(env.DB, report.station);
     if (known) {
@@ -87,7 +88,7 @@ if (rawParam) {
   }
 
   if (!id || id.length < 3) {
-    errorMessage = 'No station matched that. Try a four-letter ICAO code such as KJFK or EGLL, or an airport name.';
+    errorMessage = 'That isn\'t an airport code. Use a four-letter ICAO code such as KJFK or EGLL.';
   } else {
     const bundle = await fetchObservation(id);
     fetchedAt = bundle.fetchedAt;
@@ -108,21 +109,65 @@ if (rawParam) {
         }
       }
     } else if (bundle.error === 'no_observation') {
-      errorMessage = `No current observation is published for ${id}. Not every field reports, and reporting stations occasionally go offline.`;
+      errorMessage = `${id} has no current METAR. Many small fields don\'t report, and stations sometimes go offline.`;
     } else {
-      errorMessage = 'The observation feed did not answer. It is a public service and does go down; try again shortly, or paste a report below.';
+      errorMessage = 'The NOAA weather feed didn\'t respond. Try again in a minute, or paste a report below.';
     }
   }
 }
 
 const examples = [
-  { icao: 'KJFK', note: 'Coastal, busy' },
-  { icao: 'KDEN', note: 'High elevation' },
-  { icao: 'KASE', note: 'Mountain field' },
-  { icao: 'KSFO', note: 'Marine layer' },
-  { icao: 'EGLL', note: 'Metric, QNH' },
-  { icao: 'PANC', note: 'Sub-arctic' },
+  { icao: 'KJFK', note: 'Busy coastal hub' },
+  { icao: 'KDEN', note: 'Field at 5,434 ft' },
+  { icao: 'KASE', note: 'Mountain field at 7,820 ft' },
+  { icao: 'KSFO', note: 'Prone to marine fog' },
+  { icao: 'EGLL', note: 'Reports in metres and hPa' },
+  { icao: 'PANC', note: 'Subarctic' },
 ];
+
+interface BoardTile {
+  icao: string;
+  note: string;
+  name: string | null;
+  category: FlightCategory | null;
+  wind: string | null;
+  visibility: string | null;
+  ceiling: string | null;
+  observed: string | null;
+}
+
+function windText(report: DecodedMetar): string | null {
+  const wind = report.wind;
+  if (!wind) return null;
+  if (wind.calm) return 'Calm';
+  const speed = `${wind.speedKt ?? '-'}${wind.gustKt ? `G${wind.gustKt}` : ''} kt`;
+  if (wind.variable || wind.directionDeg == null) return `Variable ${speed}`;
+  return `${String(wind.directionDeg).padStart(3, '0')}° ${speed}`;
+}
+
+let board: BoardTile[] | null = null;
+if (!report && !errorMessage && !stationParam && !rawParam) {
+  const rows = await fetchBoard(examples.map((example) => example.icao));
+  board = examples.map((example) => {
+    const row = rows?.find((r) => r.icao === example.icao);
+    if (!row) {
+      return { ...example, name: null, category: null, wind: null, visibility: null, ceiling: null, observed: null };
+    }
+    const decoded = decodeMetar(row.metarRaw);
+    const vis = decoded.cavok ? { value: '10+', unit: 'km' } : visibilityShort(decoded.visibility);
+    const ceiling = ceilingFt(decoded.clouds);
+    return {
+      ...example,
+      name: row.name,
+      category: flightCategory(decoded),
+      wind: windText(decoded),
+      visibility: vis ? `${vis.value} ${vis.unit}` : null,
+      ceiling: ceiling != null ? `Ceiling ${ceiling.toLocaleString('en-US')} ft` : 'No ceiling',
+      observed: decoded.time ? `${String(decoded.time.hour).padStart(2, '0')}:${String(decoded.time.minute).padStart(2, '0')}Z` : null,
+    };
+  });
+}
+const boardIsLive = !!board?.some((tile) => tile.category != null);
 
 const pageTitle = report?.station
   ? `${report.station} METAR decoded · aviation.foundation`
@@ -140,9 +185,8 @@ const pageTitle = report?.station
       <div class="eyebrow">Flight planning tool</div>
       <h1 class="serif page-title">METAR &amp; TAF Decoder</h1>
       <p class="page-lead">
-        Paste any observation or look up a station, and read it as instruments rather than as a
-        line of code. Wind on your runway, cloud layers by height, density altitude, and the
-        forecast laid out on a timeline - every figure traced back to the group it came from.
+        Enter an airport code to decode its latest METAR and TAF: the wind on your runway, cloud
+        layers by height, density altitude, and the forecast hour by hour.
       </p>
     </header>
 
@@ -156,7 +200,7 @@ const pageTitle = report?.station
               id="wx-station"
               name="station"
               class="wx-input num"
-              placeholder="KJFK, EGLL, or an airport name"
+              placeholder="Airport code, like KJFK or EGLL"
               value={decodedFrom === 'live' ? stationParam : ''}
               maxlength="40"
               spellcheck="false"
@@ -173,12 +217,14 @@ const pageTitle = report?.station
       </form>
 
       <div class="wx-console-aside">
-        <div class="wx-examples">
-          <span class="col">Try</span>
-          {examples.map((example) => (
-            <a href={`/tools/metar?station=${example.icao}`} class="wx-example num" title={example.note}>{example.icao}</a>
-          ))}
-        </div>
+        {!board && (
+          <div class="wx-examples">
+            <span class="col">Try</span>
+            {examples.map((example) => (
+              <a href={`/tools/metar?station=${example.icao}`} class="wx-example num" title={example.note}>{example.icao}</a>
+            ))}
+          </div>
+        )}
         <div class="wx-recent" id="wx-recent" hidden>
           <span class="col">Recent</span>
           <span class="wx-recent-items" id="wx-recent-items"></span>
@@ -199,8 +245,8 @@ const pageTitle = report?.station
           >{decodedFrom === 'paste' ? rawParam : ''}</textarea>
           <div class="wx-paste-actions">
             <p class="wx-paste-help">
-              Line breaks are fine. A forecast pasted on its own will pull in the matching
-              observation so the whole page still has something to stand on.
+              Line breaks are fine. If you paste only a TAF, the station's current METAR is
+              fetched to go with it.
             </p>
             <button type="submit" class="btn-outline">Decode paste</button>
           </div>
@@ -216,33 +262,36 @@ const pageTitle = report?.station
       <MetarDecoder report={report} taf={taf} station={stationInfo} fetchedAt={fetchedAt} />
     ) : (
       !errorMessage && (
-        <section class="wx-intro">
-          <div class="wx-intro-grid">
-            <div>
-              <div class="col">What it decodes</div>
-              <p>
-                The full METAR body: wind, visibility, runway visual range, present weather, sky
-                condition, temperature, pressure - plus the US remark set that automated stations
-                append after RMK, and TAF change groups including FM, TEMPO, BECMG and PROB.
-              </p>
-            </div>
-            <div>
-              <div class="col">What it computes</div>
-              <p>
-                Flight category from ceiling and visibility, headwind and crosswind on any runway
-                you pick, pressure and density altitude against field elevation, relative humidity,
-                temperature/dew point spread and an estimated convective cloud base.
-              </p>
-            </div>
-            <div>
-              <div class="col">What it will not do</div>
-              <p>
-                Guess. Groups this decoder does not recognise are shown unchanged and labelled as
-                undecoded rather than being approximated, and derived figures are labelled as
-                derived. This is a study and planning tool, not a weather briefing.
-              </p>
-            </div>
-          </div>
+        <section class="wx-board" aria-labelledby="wx-board-title">
+          <h2 class="wx-board-title" id="wx-board-title">{boardIsLive ? 'Conditions right now' : 'Try one of these'}</h2>
+          <ul class="wx-board-grid">
+            {board?.map((tile) => (
+              <li>
+                <a
+                  href={`/tools/metar?station=${tile.icao}`}
+                  class={`wx-tile ${tile.category ? `cat-${tile.category.toLowerCase()}` : 'is-static'}`}
+                >
+                  <span class="wx-tile-top">
+                    <span class="wx-tile-icao">{tile.icao}</span>
+                    {tile.category && <span class="wx-tile-cat">{tile.category === 'UNKNOWN' ? '?' : tile.category}</span>}
+                  </span>
+                  <span class="wx-tile-name">{tile.name ?? tile.note}</span>
+                  {tile.category ? (
+                    <span class="wx-tile-wx num">
+                      {[tile.wind, tile.visibility, tile.ceiling].filter(Boolean).join(' · ')}
+                    </span>
+                  ) : (
+                    <span class="wx-tile-wx">{tile.note}</span>
+                  )}
+                  {tile.observed && <span class="wx-tile-meta num">{tile.note}, observed {tile.observed}</span>}
+                </a>
+              </li>
+            ))}
+          </ul>
+          <p class="wx-board-foot">
+            Data from NOAA's Aviation Weather Center, refreshed every few minutes. Use an official
+            briefing before flight.
+          </p>
         </section>
       )
     )}
@@ -380,19 +429,105 @@ const pageTitle = report?.station
 
   .wx-alert { margin-top: 26px; max-width: 720px; }
 
-  .wx-intro { margin-top: 52px; border-top: 1px solid var(--border); padding-top: 28px; }
+  .wx-board { margin-top: 52px; }
 
-  .wx-intro-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr));
-    gap: 32px;
+  .wx-board-title {
+    font-family: var(--font-sans);
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 14px;
   }
 
-  .wx-intro-grid p {
-    margin: 10px 0 0;
+  .wx-board-grid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .wx-tile {
+    --band: #3C4349;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 168px;
+    padding: 18px 18px 16px;
+    background: var(--band);
+    color: #FFFFFF;
+    text-decoration: none;
+    transition: filter var(--dur-fast) var(--ease-out);
+  }
+
+  .wx-tile.cat-vfr { --band: #17663B; }
+  .wx-tile.cat-mvfr { --band: #0B3F73; }
+  .wx-tile.cat-ifr { --band: #A3261B; }
+  .wx-tile.cat-lifr { --band: #6B2A7C; }
+
+  .wx-tile.is-static {
+    background: var(--surface-card);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    min-height: 120px;
+  }
+
+  .wx-tile:hover { filter: brightness(1.08); }
+  .wx-tile.is-static:hover { border-color: var(--border-strong); filter: none; }
+  .wx-tile:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
+
+  .wx-tile-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .wx-tile-icao {
+    font-family: var(--font-archivo);
+    font-size: 40px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 0.95;
+  }
+
+  .wx-tile-cat {
+    font-family: var(--font-archivo);
+    font-size: 20px;
+    font-weight: 700;
+  }
+
+  .wx-tile-name {
     font-size: 13px;
-    line-height: 1.65;
-    color: var(--text-muted);
+    opacity: 0.82;
+  }
+
+  .wx-tile-wx {
+    margin-top: auto;
+    font-size: 13.5px;
+    font-weight: 500;
+  }
+
+  .wx-tile-meta {
+    font-size: 11.5px;
+    opacity: 0.72;
+  }
+
+  .wx-tile.is-static .wx-tile-name,
+  .wx-tile.is-static .wx-tile-wx { color: var(--text-muted); opacity: 1; }
+
+  .wx-board-foot {
+    margin: 14px 0 0;
+    font-size: 12px;
+    color: var(--text-subtle);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wx-tile { transition: none; }
+  }
+
+  @media (max-width: 960px) {
+    .wx-board-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
 
   @media (max-width: 640px) {
@@ -409,7 +544,9 @@ const pageTitle = report?.station
     .wx-example { font-size: 11px; padding: 3px 7px; }
     .wx-paste-actions { flex-direction: column; align-items: stretch; }
     .wx-paste-actions .btn-outline { width: 100%; }
-    .wx-intro-grid { gap: 26px; }
+    .wx-board-grid { grid-template-columns: minmax(0, 1fr); }
+    .wx-tile { min-height: 0; }
+    .wx-tile-icao { font-size: 34px; }
   }
 </style>
 

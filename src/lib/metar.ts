@@ -347,6 +347,17 @@ function parseVisibilityMeters(text: string): Visibility | null {
   };
 }
 
+export function visibilityShort(v: Visibility | null | undefined): { value: string; unit: 'sm' | 'km' | 'm' } | null {
+  if (!v) return null;
+  if (/^\d{4}/.test(v.raw) && v.meters != null) {
+    if (v.meters >= 9999) return { value: '10+', unit: 'km' };
+    if (v.meters >= 5000) return { value: String(Math.round(v.meters / 1000)), unit: 'km' };
+    return { value: v.meters.toLocaleString('en-US'), unit: 'm' };
+  }
+  if (v.statuteMiles == null) return null;
+  return { value: `${formatMiles(Math.round(v.statuteMiles * 100) / 100)}${v.greaterThan ? '+' : ''}`, unit: 'sm' };
+}
+
 export function formatMiles(miles: number): string {
   if (Number.isInteger(miles)) return String(miles);
   const whole = Math.floor(miles);

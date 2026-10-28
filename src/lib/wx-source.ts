@@ -74,6 +74,30 @@ interface AwcMetarRow {
 
 const METERS_TO_FEET = 3.280839895;
 
+export interface BoardRow {
+  icao: string;
+  name: string | null;
+  metarRaw: string;
+}
+
+export async function fetchBoard(icaos: string[]): Promise<BoardRow[] | null> {
+  const ids = icaos.map((icao) => icao.trim().toUpperCase()).filter((id) => /^[A-Z][A-Z0-9]{2,3}$/.test(id));
+  if (!ids.length) return [];
+
+  const response = await cachedFetch(`${BASE}/metar?ids=${ids.join(',')}&format=json`);
+  if (!response) return null;
+
+  try {
+    const rows = (await response.json()) as AwcMetarRow[];
+    if (!Array.isArray(rows)) return null;
+    return rows
+      .filter((row) => row.icaoId && row.rawOb)
+      .map((row) => ({ icao: row.icaoId!, name: row.name ?? null, metarRaw: row.rawOb!.trim() }));
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchObservation(icao: string): Promise<ObservationBundle> {
   const id = icao.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   const fetchedAt = new Date().toISOString();

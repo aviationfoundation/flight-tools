@@ -1,6 +1,6 @@
 ---
 import type { DecodedMetar, DecodedTaf, CloudLayer, TafPeriod } from '../lib/metar';
-import { resolveTime, formatMiles, compassPoint, cloudText } from '../lib/metar';
+import { resolveTime, formatMiles, compassPoint, cloudText, visibilityShort } from '../lib/metar';
 import {
   flightCategory,
   ceilingFt,
@@ -72,14 +72,13 @@ const windHeadline = !report.wind
             : 'kt',
       };
 
-const visHeadline = report.visibility
-  ? report.visibility.statuteMiles != null && report.visibility.statuteMiles >= 0
-    ? {
-        value: `${report.visibility.greaterThan ? '10+' : formatMiles(Math.round(report.visibility.statuteMiles * 100) / 100)}`,
-        unit: 'statute miles',
-      }
-    : { value: '-', unit: '' }
-  : { value: '-', unit: 'not reported' };
+const VIS_UNIT_LABEL = { sm: 'statute miles', km: 'kilometres', m: 'metres' } as const;
+const visShort = visibilityShort(report.visibility);
+const visHeadline = report.cavok
+  ? { value: '10+', unit: 'kilometres, CAVOK' }
+  : visShort
+    ? { value: visShort.value, unit: VIS_UNIT_LABEL[visShort.unit] }
+    : { value: '-', unit: report.visibility ? '' : 'not reported' };
 
 const ceilingHeadline = ceiling != null
   ? { value: fmtInt(ceiling), unit: 'ft AGL' }
@@ -357,10 +356,9 @@ function windCell(period: TafPeriod): { text: string; deg: number | null } {
 
 function visCell(period: TafPeriod): { text: string; category: FlightCategory } {
   if (period.cavok) return { text: 'CAVOK', category: 'VFR' };
-  const sm = period.visibility?.statuteMiles ?? null;
-  if (!period.visibility || sm == null) return { text: 'No change', category: 'UNKNOWN' };
-  const miles = formatMiles(Math.round(sm * 100) / 100);
-  return { text: `${miles}${period.visibility.greaterThan ? '+' : ''} sm`, category: categoryForVis(sm) };
+  const short = visibilityShort(period.visibility);
+  if (!short) return { text: 'No change', category: 'UNKNOWN' };
+  return { text: `${short.value} ${short.unit}`, category: categoryForVis(period.visibility?.statuteMiles ?? null) };
 }
 
 function ceilingCell(period: TafPeriod): { text: string; category: FlightCategory } {
@@ -439,25 +437,25 @@ const categoryClass = `cat-${category.toLowerCase()}`;
 const faqItems = [
   {
     q: 'How is the flight category decided?',
-    a: 'From the worse of ceiling and prevailing visibility, using the FAA thresholds: LIFR below 500 ft or 1 sm, IFR below 1,000 ft or 3 sm, MVFR at or below 3,000 ft or 5 sm, VFR above both. A ceiling is the lowest broken, overcast or obscured layer; few and scattered layers never make a ceiling.',
+    a: 'The worse of ceiling and visibility decides it, using FAA thresholds: LIFR below 500 ft or 1 sm, IFR below 1,000 ft or 3 sm, MVFR from 1,000 to 3,000 ft or 3 to 5 sm, and VFR above that. The ceiling is the lowest broken, overcast or obscured layer. Few and scattered layers never count.',
   },
   {
-    q: 'What is measured, and what is derived?',
-    a: 'Everything in the raw report is measured or observed at the field. Pressure altitude, density altitude, relative humidity, estimated cloud base and the runway wind components are computed here from those numbers using standard approximations. They are planning aids, not performance data for a specific aircraft.',
+    q: 'Which numbers are measured, and which are calculated?',
+    a: 'Everything in the raw report was observed at the field. Pressure altitude, density altitude, humidity, the estimated cloud base and the runway wind components are calculated here with standard formulas. None of them is performance data for your aircraft.',
   },
   {
-    q: 'Why does the crosswind not match what the tower says?',
-    a: "Wind direction in a METAR is referenced to true north. Runway numbers are magnetic. The crosswind figure ignores magnetic variation, so at fields with large variation treat it as close rather than exact; the tower's spoken wind is already magnetic and will differ.",
+    q: 'Why does the crosswind differ from what the tower says?',
+    a: 'METAR winds are referenced to true north, and runway numbers are magnetic. This page does not correct for magnetic variation, so at fields with large variation the crosswind is approximate. Tower and ATIS winds are already magnetic.',
   },
   {
-    q: 'What does it mean when a value is flagged as unrealistic?',
-    a: 'Some flagged conditions above are sanity checks on the report itself, not on the weather: a dew point above temperature, a wind gust no higher than the sustained speed, or a value outside anything a surface station has ever recorded. Those point at a likely transcription or sensor error in the source feed, not at conditions to plan around.',
+    q: 'What does a warning about the report itself mean?',
+    a: 'Some warnings check the report rather than the weather: a dew point above the temperature, a gust no stronger than the steady wind, or a value no surface station has ever recorded. These usually point to a sensor or transcription error in the feed.',
   },
   {
-    q: 'Where does this come from, and how fresh is it?',
+    q: 'Where does the data come from?',
     a: fetchedAt
-      ? `Observations and forecasts come from the NOAA Aviation Weather Center feed, cached for a few minutes. Retrieved ${new Date(fetchedAt).toISOString().replace('T', ' ').slice(0, 16)}Z. This is a decoding tool for study and planning, not a weather briefing; nothing here substitutes for an official source before a flight.`
-      : 'Observations and forecasts come from the NOAA Aviation Weather Center feed, cached for a few minutes. This is a decoding tool for study and planning, not a weather briefing; nothing here substitutes for an official source before a flight.',
+      ? `NOAA's Aviation Weather Center. Reports are cached here for up to four minutes; this one was retrieved at ${new Date(fetchedAt).toISOString().replace('T', ' ').slice(0, 16)}Z. Use an official briefing before flight.`
+      : "NOAA's Aviation Weather Center. Reports are cached here for up to four minutes. Use an official briefing before flight.",
   },
 ];
 ---
@@ -549,7 +547,7 @@ const faqItems = [
     >
       <header class="wx-panel-head">
         <span class="col">Wind</span>
-        <span class="wx-panel-note">Directions are true north, as reported</span>
+        <span class="wx-panel-note">True north, as reported</span>
       </header>
 
       <svg class="wx-dial" viewBox="-24 -24 288 288" role="img" aria-label={report.wind ? `Wind ${report.wind.raw}` : 'Wind not reported'}>
@@ -644,7 +642,7 @@ const faqItems = [
     <div class="wx-panel">
       <header class="wx-panel-head">
         <span class="col">Sky</span>
-        <span class="wx-panel-note">Coverage shown in eighths, as reported</span>
+        <span class="wx-panel-note">Coverage in eighths of the sky</span>
       </header>
 
       <svg class="wx-sky" viewBox={`0 0 ${SKY_W} 300`} role="img" aria-label="Cloud layers by height">
@@ -700,14 +698,14 @@ const faqItems = [
         <rect x={SKY_LEFT} y={SKY_BOTTOM} width={SKY_RIGHT - SKY_LEFT} height="12" fill="url(#wx-hatch)" class="sky-ground" />
         <rect x={SKY_LEFT + 58} y={SKY_BOTTOM - 3} width="88" height="4" class="sky-strip" />
         <text x={SKY_LEFT - 8} y={SKY_BOTTOM + 3.5} class="sky-axis num" text-anchor="end">0</text>
-        <text x={SKY_RIGHT} y={SKY_BOTTOM + 22} class="sky-foot" text-anchor="end">Feet above ground · scale expanded below 3,000</text>
+        <text x={SKY_RIGHT} y={SKY_BOTTOM + 22} class="sky-foot" text-anchor="end">Feet above ground, stretched below 3,000</text>
       </svg>
     </div>
 
     <div class="wx-panel">
       <header class="wx-panel-head">
         <span class="col">Air</span>
-        <span class="wx-panel-note">Performance figures are standard approximations</span>
+        <span class="wx-panel-note">Calculated with standard-atmosphere formulas</span>
       </header>
 
       {report.temperatureC != null ? (
@@ -771,7 +769,7 @@ const faqItems = [
   <section class="wx-visibility">
     <header class="wx-panel-head">
       <span class="col">Visibility and present weather</span>
-      <span class="wx-panel-note">Bands show the category prevailing visibility alone would give</span>
+      <span class="wx-panel-note">Category from visibility alone</span>
     </header>
 
     <div class="wx-vis-scale">
@@ -783,7 +781,7 @@ const faqItems = [
           >
             {zone.cat}
             {zone.active && visMiles != null && (
-              <span class="wx-vis-zone-value num">{report.visibility?.greaterThan ? '10+' : formatMiles(Math.round(visMiles * 100) / 100)} sm</span>
+              <span class="wx-vis-zone-value num">{visShort ? `${visShort.value} ${visShort.unit}` : ''}</span>
             )}
           </span>
         ))}
@@ -851,9 +849,8 @@ const faqItems = [
 
   {report.warnings.length > 0 && (
     <p class="wx-panel-warning">
-      {report.warnings.length} group{report.warnings.length === 1 ? '' : 's'} in this report
-      ({report.warnings.join(', ')}) fall outside what this decoder recognises. They are shown
-      unchanged rather than guessed at.
+      This decoder doesn't recognise {report.warnings.length === 1 ? 'this group' : 'these groups'}:
+      {report.warnings.join(', ')}. {report.warnings.length === 1 ? "It's" : "They're"} shown as written.
     </p>
   )}
 
@@ -1031,8 +1028,7 @@ const faqItems = [
         <span class="col">Forecast (TAF)</span>
       </header>
       <p class="wx-empty">
-        No TAF is available for this station. Forecasts are issued only for aerodromes with a
-        forecast responsibility: most smaller fields report a METAR but never a TAF.
+        No TAF for this station. Many smaller fields publish a METAR but no forecast.
       </p>
     </section>
   )}
