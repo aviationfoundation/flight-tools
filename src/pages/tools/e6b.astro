@@ -12,10 +12,14 @@ import {
   type TasResult,
   type TfdResult,
 } from '../../lib/e6b';
+import { triangleGeometry, TRIANGLE_SIZE } from '../../lib/e6b-triangle';
 
 const params = Astro.url.searchParams;
+const fresh = [...params.keys()].length === 0;
+const EXAMPLE: Record<string, number> = { tc: 270, tas: 110, wd: 230, ws: 18, cas: 120, pa: 8500, oat: 18, dist: 185, gs: 132, burn: 9.5, fuel: 40 };
 
 function num(name: string): number | null {
+  if (fresh && name in EXAMPLE) return EXAMPLE[name];
   const raw = params.get(name);
   if (raw == null || raw.trim() === '') return null;
   const n = Number(raw);
@@ -52,29 +56,8 @@ if (hasTfdInput) {
   tfd = timeFuelDistance({ distanceNm: dist, groundSpeedKt: gs, timeMin: time, fuelBurnGph: burn, fuelOnBoardGal: fuel });
 }
 
-const CX = 100;
-const CY = 100;
-const R = 82;
+const triangle = wind && tc != null && tas != null ? triangleGeometry(tc, wind.groundSpeedKt, wind.headingDeg, tas) : null;
 
-function point(deg: number, r: number) {
-  const rad = (deg * Math.PI) / 180;
-  return { x: CX + Math.sin(rad) * r, y: CY - Math.cos(rad) * r };
-}
-
-const compassTicks = Array.from({ length: 36 }, (_, i) => {
-  const deg = i * 10;
-  const major = deg % 30 === 0;
-  const outer = point(deg, R);
-  const inner = point(deg, major ? R - 10 : R - 5);
-  return { x1: inner.x, y1: inner.y, x2: outer.x, y2: outer.y, major };
-});
-
-const cardinals = [
-  { deg: 0, label: 'N' },
-  { deg: 90, label: 'E' },
-  { deg: 180, label: 'S' },
-  { deg: 270, label: 'W' },
-].map((c) => ({ ...point(c.deg, R - 20), label: c.label }));
 ---
 
 <Layout
@@ -88,17 +71,16 @@ const cardinals = [
       <div class="eyebrow">Flight planning tool</div>
       <h1 class="serif page-title">E6B Flight Computer</h1>
       <p class="page-lead">
-        The three calculations the aluminum wheel was built for, worked the same way: a wind
-        triangle for heading and groundspeed, true airspeed from what the airspeed indicator and
-        the altimeter actually show, and time, fuel and distance solved from whichever two of the
-        three you already know.
+        The three jobs of the paper flight computer: the heading and groundspeed a wind gives you,
+        true airspeed from your instruments, and time, fuel and distance from any two of the three.
+        The example numbers are filled in; change any of them.
       </p>
     </header>
 
     <section class="e6b-panel" id="e6b-wind">
       <header class="e6b-panel-head">
-        <span class="col">01 - Wind triangle</span>
-        <span class="e6b-panel-note">Heading, wind correction angle and groundspeed for one leg</span>
+        <span class="col">Wind triangle</span>
+        <span class="e6b-panel-note">Heading and groundspeed for one leg</span>
       </header>
 
       <div class="e6b-body">
@@ -123,34 +105,30 @@ const cardinals = [
         </form>
 
         <div class="e6b-visual">
-          <svg viewBox="0 0 200 200" class="e6b-dial" role="img" aria-label="Course, heading and wind on a compass rose">
-            <circle cx={CX} cy={CY} r={R} class="dial-ring" />
-            {compassTicks.map((t) => <line x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} class={t.major ? 'dial-tick major' : 'dial-tick'} />)}
-            {cardinals.map((c) => <text x={c.x} y={c.y + 4} class="dial-label" text-anchor="middle">{c.label}</text>)}
-
-            {tc != null && (
-              <g data-e6b-course transform={`rotate(${tc} ${CX} ${CY})`}>
-                <line x1={CX} y1={CY} x2={CX} y2={CY - (R - 6)} class="e6b-course-line" />
-              </g>
-            )}
-            {wd != null && (
-              <g data-e6b-wind-arrow transform={`rotate(${wd} ${CX} ${CY})`}>
-                <line x1={CX} y1={CY - R + 2} x2={CX} y2={CY - 34} class="e6b-wind-shaft" />
-                <path d="M 100 92 l -6 -10 l 12 0 Z" class="e6b-wind-head" />
-              </g>
-            )}
-            {wind && (
-              <g data-e6b-heading transform={`rotate(${wind.headingDeg} ${CX} ${CY})`}>
-                <line x1={CX} y1={CY} x2={CX} y2={CY - (R - 6)} class="e6b-heading-line" />
-                <path d="M 100 15 l -5 9 l 10 0 Z" class="e6b-heading-head" />
-              </g>
-            )}
-            <circle cx={CX} cy={CY} r="4" class="dial-hub" />
+          <svg viewBox={`0 0 ${TRIANGLE_SIZE} ${TRIANGLE_SIZE}`} class="e6b-tri" role="img" aria-label="Wind triangle: heading and true airspeed, plus the wind, add up to the track and groundspeed" data-e6b-triangle>
+            <defs>
+              <marker id="e6b-arrow-ground" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" class="tri-head-ground" /></marker>
+              <marker id="e6b-arrow-air" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" class="tri-head-air" /></marker>
+              <marker id="e6b-arrow-wind" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" class="tri-head-wind" /></marker>
+            </defs>
+            <g class="tri-north" transform={`translate(${TRIANGLE_SIZE - 22} 26)`}>
+              <line x1="0" y1="14" x2="0" y2="-10" />
+              <text x="0" y="-14" text-anchor="middle">N</text>
+            </g>
+            <g data-tri-body visibility={triangle ? 'visible' : 'hidden'}>
+              <line class="tri-ground" marker-end="url(#e6b-arrow-ground)" data-tri="ground" x1={triangle?.ground.x1} y1={triangle?.ground.y1} x2={triangle?.ground.x2} y2={triangle?.ground.y2} />
+              <line class="tri-air" marker-end="url(#e6b-arrow-air)" data-tri="air" x1={triangle?.air.x1} y1={triangle?.air.y1} x2={triangle?.air.x2} y2={triangle?.air.y2} />
+              <line class="tri-wind" marker-end="url(#e6b-arrow-wind)" data-tri="wind" x1={triangle?.wind.x1} y1={triangle?.wind.y1} x2={triangle?.wind.x2} y2={triangle?.wind.y2} />
+              <circle class="tri-origin" r="3.5" cx={triangle?.ground.x1} cy={triangle?.ground.y1} data-tri-origin />
+              <text class="tri-label tri-label-ground num" text-anchor="middle" data-tri-label="ground" x={triangle?.ground.lx} y={triangle?.ground.ly}>{wind ? `${Math.round(wind.groundSpeedKt)} kt` : ''}</text>
+              <text class="tri-label tri-label-air num" text-anchor="middle" data-tri-label="air" x={triangle?.air.lx} y={triangle?.air.ly}>{tas != null ? `${tas} kt` : ''}</text>
+              <text class="tri-label tri-label-wind num" text-anchor="middle" data-tri-label="wind" x={triangle?.wind.lx} y={triangle?.wind.ly}>{ws != null ? `${ws} kt` : ''}</text>
+            </g>
           </svg>
           <ul class="e6b-legend">
-            <li><i class="key course"></i>Course{tc != null ? ` - ${pad3(tc)}°` : ''}</li>
-            <li><i class="key wind"></i>Wind{wd != null && ws != null ? ` - ${pad3(wd)}° at ${ws} kt` : ''}</li>
-            <li><i class="key heading"></i>Heading{wind ? ` - ${pad3(wind.headingDeg)}°` : ''}</li>
+            <li><i class="key course"></i>Track over the ground <span class="num" data-out="leg-track">{tc != null ? `${pad3(tc)}°` : ''}</span></li>
+            <li><i class="key heading"></i>Heading through the air <span class="num" data-out="leg-heading">{wind ? `${pad3(wind.headingDeg)}°` : ''}</span></li>
+            <li><i class="key wind"></i>Wind <span class="num" data-out="leg-wind">{wd != null && ws != null ? `from ${pad3(wd)}°` : ''}</span></li>
           </ul>
         </div>
 
@@ -178,12 +156,11 @@ const cardinals = [
               <p class="e6b-derivation">
                 Wind is <span data-out="rel-angle">{Math.abs(Math.round(wind.relativeWindAngleDeg))}°</span> off your nose
                 from the <span data-out="rel-side">{wind.relativeWindAngleDeg >= 0 ? 'right' : 'left'}</span>, splitting into
-                a <span data-out="headwind">{Math.abs(wind.headwindKt).toFixed(1)}</span> kt {wind.headwindKt >= 0 ? 'headwind' : 'tailwind'}
+                a <span data-out="headwind">{Math.abs(wind.headwindKt).toFixed(1)}</span> kt <span data-out="head-kind">{wind.headwindKt >= 0 ? 'headwind' : 'tailwind'}</span>{' '}
                 and a <span data-out="crosswind">{wind.crosswindKt.toFixed(1)}</span> kt crosswind
-                {wind.crosswindFrom !== 'none' && <> from the <span data-out="cross-side">{wind.crosswindFrom}</span></>}. Crab
-                <span data-out="wca2"> {Math.abs(wind.windCorrectionAngleDeg).toFixed(1)}°</span> toward the wind to hold the
-                course over the ground; the crosswind component is what sets that angle, the headwind component is what's
-                left of true airspeed as groundspeed.
+                {wind.crosswindFrom !== 'none' && <> from the <span data-out="cross-side">{wind.crosswindFrom}</span></>}. Turn
+                <span data-out="wca2"> {Math.abs(wind.windCorrectionAngleDeg).toFixed(1)}°</span> into the wind to hold your
+                course. The crosswind sets that angle; <span data-out="head-effect">{wind.headwindKt >= 0 ? 'the headwind is what comes off your airspeed' : 'the tailwind adds to your airspeed'}</span>.
               </p>
             </>
           )}
@@ -194,7 +171,7 @@ const cardinals = [
 
     <section class="e6b-panel" id="e6b-tas-panel">
       <header class="e6b-panel-head">
-        <span class="col">02 - True airspeed</span>
+        <span class="col">True airspeed</span>
         <span class="e6b-panel-note">From calibrated airspeed, pressure altitude and outside air temperature</span>
       </header>
 
@@ -252,8 +229,8 @@ const cardinals = [
 
     <section class="e6b-panel" id="e6b-tfd">
       <header class="e6b-panel-head">
-        <span class="col">03 - Time, fuel, distance</span>
-        <span class="e6b-panel-note">Enter any two of distance, groundspeed and time - the third fills in</span>
+        <span class="col">Time, fuel, distance</span>
+        <span class="e6b-panel-note">Enter any two of distance, groundspeed and time to get the third</span>
       </header>
 
       <div class="e6b-body e6b-body-narrow">
@@ -384,24 +361,27 @@ const cardinals = [
   .e6b-submit { align-self: flex-start; margin-top: 4px; }
 
   .e6b-visual { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-  .e6b-dial { width: 100%; max-width: 200px; display: block; overflow: visible; }
-  .dial-ring { fill: none; stroke: var(--border); stroke-width: 1; }
-  .dial-tick { stroke: var(--border); stroke-width: 1; }
-  .dial-tick.major { stroke: var(--text-muted); stroke-width: 1.3; }
-  .dial-label { font-size: 9px; font-weight: 600; fill: var(--text-muted); }
-  .dial-hub { fill: var(--fg); }
-  .e6b-course-line { stroke: var(--text-muted); stroke-width: 1.6; stroke-dasharray: 4 3; }
-  .e6b-wind-shaft { stroke: var(--accent-sky); stroke-width: 2; }
-  .e6b-wind-head { fill: var(--accent-sky); }
-  .e6b-heading-line { stroke: var(--accent-blue); stroke-width: 2.2; }
-  .e6b-heading-head { fill: var(--accent-blue); }
+  .e6b-tri { width: 100%; max-width: 300px; display: block; overflow: visible; }
+  .tri-ground { stroke: var(--fg); stroke-width: 3; }
+  .tri-air { stroke: var(--accent-blue); stroke-width: 3; }
+  .tri-wind { stroke: var(--accent-sky); stroke-width: 2.4; stroke-dasharray: 6 4; }
+  .tri-head-ground { fill: var(--fg); }
+  .tri-head-air { fill: var(--accent-blue); }
+  .tri-head-wind { fill: var(--accent-sky); }
+  .tri-origin { fill: var(--fg); }
+  .tri-label { font-size: 12px; font-weight: 600; }
+  .tri-label-ground { fill: var(--fg); }
+  .tri-label-air { fill: var(--accent-blue); }
+  .tri-label-wind { fill: var(--accent-sky); }
+  .tri-north line { stroke: var(--text-muted); stroke-width: 1.4; }
+  .tri-north text { font-size: 10px; font-weight: 700; fill: var(--text-muted); }
 
   .e6b-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 11.5px; color: var(--text-muted); }
   .e6b-legend li { display: flex; align-items: center; gap: 8px; }
-  .key { width: 12px; height: 2px; display: inline-block; border-radius: 1px; }
-  .key.course { background: var(--text-muted); }
-  .key.wind { background: var(--accent-sky); }
-  .key.heading { background: var(--accent-blue); height: 3px; }
+  .key { width: 16px; height: 3px; display: inline-block; margin-right: 8px; vertical-align: middle; }
+  .key.course { background: var(--fg); }
+  .key.wind { background: repeating-linear-gradient(to right, var(--accent-sky) 0 5px, transparent 5px 8px); }
+  .key.heading { background: var(--accent-blue); }
 
   .e6b-results { min-width: 0; }
   .e6b-stat-band { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
@@ -442,6 +422,7 @@ const cardinals = [
 
 <script>
   import { windTriangle, trueAirspeed, timeFuelDistance, formatHm, pad3 } from '../../lib/e6b';
+  import { triangleGeometry } from '../../lib/e6b-triangle';
 
   function readNum(form: HTMLFormElement, name: string): number | null {
     const el = form.elements.namedItem(name) as HTMLInputElement | null;
@@ -459,9 +440,28 @@ const cardinals = [
 
     const windForm = root.querySelector<HTMLFormElement>('[data-e6b-form="wind"]');
     const windResults = root.querySelector<HTMLElement>('[data-e6b-results="wind"]');
-    const courseGroup = root.querySelector<SVGGElement>('[data-e6b-course]');
-    const windArrow = root.querySelector<SVGGElement>('[data-e6b-wind-arrow]');
-    const headingGroup = root.querySelector<SVGGElement>('[data-e6b-heading]');
+    const triangleBody = root.querySelector<SVGGElement>('[data-tri-body]');
+
+    function drawTriangle(tc: number, gsKt: number, headingDeg: number, tas: number, ws: number) {
+      if (!triangleBody) return;
+      const geometry = triangleGeometry(tc, gsKt, headingDeg, tas);
+      for (const key of ['ground', 'air', 'wind'] as const) {
+        const seg = geometry[key];
+        const line = triangleBody.querySelector<SVGLineElement>(`[data-tri="${key}"]`);
+        line?.setAttribute('x1', String(seg.x1));
+        line?.setAttribute('y1', String(seg.y1));
+        line?.setAttribute('x2', String(seg.x2));
+        line?.setAttribute('y2', String(seg.y2));
+        const label = triangleBody.querySelector<SVGTextElement>(`[data-tri-label="${key}"]`);
+        label?.setAttribute('x', String(seg.lx));
+        label?.setAttribute('y', String(seg.ly));
+        if (label) label.textContent = key === 'ground' ? `${Math.round(gsKt)} kt` : key === 'air' ? `${tas} kt` : `${ws} kt`;
+      }
+      const origin = triangleBody.querySelector<SVGCircleElement>('[data-tri-origin]');
+      origin?.setAttribute('cx', String(geometry.ground.x1));
+      origin?.setAttribute('cy', String(geometry.ground.y1));
+      triangleBody.setAttribute('visibility', 'visible');
+    }
 
     function renderWind() {
       if (!windForm || !windResults) return;
@@ -470,17 +470,19 @@ const cardinals = [
       const wd = readNum(windForm, 'wd');
       const ws = readNum(windForm, 'ws');
 
-      if (tc != null) { courseGroup?.setAttribute('transform', `rotate(${tc} 100 100)`); courseGroup?.removeAttribute('hidden'); }
-      if (wd != null) { windArrow?.setAttribute('transform', `rotate(${wd} 100 100)`); windArrow?.removeAttribute('hidden'); }
+      if (tc != null) setText(document, 'leg-track', `${pad3(tc)}°`);
+      if (wd != null) setText(document, 'leg-wind', `from ${pad3(wd)}°`);
 
       if (tc == null || tas == null || wd == null || ws == null) return;
       const result = windTriangle({ trueCourseDeg: tc, tasKt: tas, windFromDeg: wd, windSpeedKt: ws });
       if (!result) {
-        headingGroup?.setAttribute('hidden', '');
+        triangleBody?.setAttribute('visibility', 'hidden');
         return;
       }
-      headingGroup?.removeAttribute('hidden');
-      headingGroup?.setAttribute('transform', `rotate(${result.headingDeg} 100 100)`);
+      drawTriangle(tc, result.groundSpeedKt, result.headingDeg, tas, ws);
+      setText(document, 'leg-heading', `${pad3(result.headingDeg)}°`);
+      setText(windResults, 'head-kind', result.headwindKt >= 0 ? 'headwind' : 'tailwind');
+      setText(windResults, 'head-effect', result.headwindKt >= 0 ? 'the headwind is what comes off your airspeed' : 'the tailwind adds to your airspeed');
 
       setText(windResults, 'heading', `${pad3(result.headingDeg)}°`);
       setText(windResults, 'wca', `${Math.abs(result.windCorrectionAngleDeg).toFixed(1)}°`);
