@@ -1,5 +1,6 @@
 export const prerender = false;
 
+import { env } from 'cloudflare:workers';
 import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { searchStations } from '../../../lib/wx-stations';
@@ -9,8 +10,7 @@ const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(12).optional(),
 });
 
-export const GET: APIRoute = async ({ request, locals }) => {
-  const env = locals.runtime.env;
+export const GET: APIRoute = async ({ request }) => {
   const url = new URL(request.url);
 
   const parsed = querySchema.safeParse({

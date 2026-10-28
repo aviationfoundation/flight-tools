@@ -1,5 +1,6 @@
 export const prerender = false;
 
+import { env } from 'cloudflare:workers';
 import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { fetchObservation } from '../../../lib/wx-source';
@@ -19,8 +20,7 @@ function json(body: unknown, status: number, cacheSeconds = 0): Response {
   });
 }
 
-export const GET: APIRoute = async ({ request, locals }) => {
-  const env = locals.runtime.env;
+export const GET: APIRoute = async ({ request }) => {
   const url = new URL(request.url);
 
   const parsed = querySchema.safeParse({ station: url.searchParams.get('station') ?? '' });

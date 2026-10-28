@@ -1,13 +1,13 @@
 ---
 export const prerender = false;
 
+import { env } from 'cloudflare:workers';
 import Layout from '../../layouts/Layout.astro';
 import MetarDecoder from '../../components/MetarDecoder.astro';
 import { decodeMetar, decodeTaf, type DecodedMetar, type DecodedTaf } from '../../lib/metar';
 import { fetchObservation } from '../../lib/wx-source';
 import { getStation, normalizeStationId, searchStations } from '../../lib/wx-stations';
 
-const env = Astro.locals.runtime.env;
 const params = Astro.url.searchParams;
 const stationParam = (params.get('station') ?? '').trim();
 const rawParam = (params.get('raw') ?? '').trim();

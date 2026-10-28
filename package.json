@@ -7,13 +7,14 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
-    "start": "node dist/server/entry.mjs",
-    "check": "astro check"
+    "preview": "astro build && astro preview",
+    "deploy": "astro build && wrangler deploy"
   },
   "dependencies": {
-    "@astrojs/node": "^9.0.0",
-    "astro": "^5.18.2",
-    "typescript": "^5.9.3",
-    "zod": "^4.3.6"
-  }
+    "@astrojs/cloudflare": "^14.4.2",
+    "astro": "^7.4.2",
+    "typescript": "^7.0.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {}
 }

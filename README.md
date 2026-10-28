@@ -17,7 +17,7 @@ npm install
 npm run dev
 ```
 
-For production: `npm run build && npm start`. The METAR page fetches on the server, so it can't be a static export.
+Deploys to Cloudflare Workers with `npm run deploy` (needs `wrangler login` first). The METAR page fetches on the server, so it can't be a static export.
 
 ## Known gaps
 
