@@ -1,3 +1,5 @@
+import { ENGLISH_SHORT_WORDS } from './english-words.ts';
+
 export interface DecodedField {
   code: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G';
   raw: string;
@@ -47,6 +49,23 @@ export type IssueCode =
   | 'item-duplicated'
   | 'multiple-notams';
 
+export type StatementStatus = 'closed' | 'unserviceable' | 'restricted' | 'hazard' | 'available' | 'info';
+
+export interface Statement {
+  status: StatementStatus;
+  subject: string;
+  detail: string | null;
+}
+
+export const STATUS_LABELS: Record<StatementStatus, string> = {
+  closed: 'Closed or not allowed',
+  unserviceable: 'Out of service',
+  restricted: 'Limits and conditions',
+  hazard: 'Hazards',
+  available: 'Available',
+  info: 'Also in the text',
+};
+
 export interface NotamIssue {
   severity: 'error' | 'warning';
   code: IssueCode;
@@ -70,6 +89,10 @@ export interface DecodedNotam {
   plainSummary: string;
   unrecognisedTokens: string[];
   unstructured: boolean;
+  headline: string | null;
+  statements: Statement[];
+  scheduleText: string | null;
+  limitsText: string | null;
   issues: NotamIssue[];
   textCoordinates: Array<{ raw: string; lat: number; lon: number }>;
 }
@@ -399,6 +422,8 @@ const WORDS: Record<string, string> = {
   ASR: 'airport surveillance radar',
   AUTH: 'authorization',
   AVBL: 'available',
+  AVGAS: 'avgas',
+  MOGAS: 'mogas',
   AWOS: 'automated weather observing system',
   BCST: 'broadcast',
   BLDG: 'building',
@@ -441,6 +466,8 @@ const WORDS: Record<string, string> = {
   HJ: 'sunrise to sunset',
   HN: 'sunset to sunrise',
   HOL: 'holidays',
+  HR: 'hour',
+  HRS: 'hours',
   IAW: 'in accordance with',
   IDENT: 'identification',
   IMM: 'immediately',
@@ -552,7 +579,13 @@ const US_STATES = new Set('CT DC KS KY MD MN MS MT NC ND NH NJ NM NV NY PR SC SD
 
 const ENGLISH_WITHOUT_VOWELS = new Set(['BY', 'MY', 'FLY', 'DRY', 'SKY', 'WHY', 'TRY', 'SPY']);
 
-const NAVAID_WORDS = new Set(['VOR', 'DME', 'NDB', 'VORTAC', 'TACAN', 'LOC', 'IDENT', 'ILS']);
+const IDENT_BEFORE = new Set(['VOR', 'VORTAC', 'TACAN', 'NDB', 'DME']);
+const IDENT_AFTER = new Set(['VOR', 'VORTAC', 'TACAN', 'NDB', 'DME', 'IDENT']);
+const FUNCTION_WORDS = new Set('AND OR FOR OUT OF ON IN TO AT IS ARE NOT ALL THE BY WITH FROM AS'.split(' '));
+const MONTHS: Record<string, string> = {
+  JAN: 'January', FEB: 'February', MAR: 'March', APR: 'April', MAY: 'May', JUN: 'June',
+  JUL: 'July', AUG: 'August', SEP: 'September', OCT: 'October', NOV: 'November', DEC: 'December',
+};
 
 export interface ExpansionResult {
   text: string;
@@ -568,6 +601,14 @@ function groupThousands(digits: string): string {
   return n >= 10000 ? n.toLocaleString('en-US') : String(n);
 }
 
+function isEnglish(word: string): boolean {
+  if (ENGLISH_SHORT_WORDS.has(word)) return true;
+  if (word.endsWith('S') && ENGLISH_SHORT_WORDS.has(word.slice(0, -1))) return true;
+  if (word.endsWith('ES') && ENGLISH_SHORT_WORDS.has(word.slice(0, -2))) return true;
+  if (word.endsWith('ED') && (ENGLISH_SHORT_WORDS.has(word.slice(0, -2)) || ENGLISH_SHORT_WORDS.has(word.slice(0, -1)))) return true;
+  return false;
+}
+
 export function expandWithReport(text: string, keep: Iterable<string> = []): ExpansionResult {
   const keepSet = new Set(keep);
   const unrecognised = new Set<string>();
@@ -577,50 +618,60 @@ export function expandWithReport(text: string, keep: Iterable<string> = []): Exp
     .replace(/\b(SFC|GND|\d+ ?FT|FL ?\d{2,3}) ?- ?(\d+ ?FT|FL ?\d{2,3}|UNL)\b/g, '$1 TO $2')
     .replace(/\b(\d+(?:\.\d+)?) ?KG\b/g, '$1 kg')
     .replace(/\bNOT AVBL\b/g, 'not available')
+    .replace(/\bNOT AUTH\b/g, 'not authorized')
     .replace(/\bU\/S\b/g, 'unserviceable')
     .replace(/\bO\/R\b/g, 'on request')
     .replace(/\bH24\b/g, 'continuous, 24 hours')
     .replace(/\bSR\s?-\s?SS\b/g, 'sunrise to sunset')
     .replace(/\bSS\s?-\s?SR\b/g, 'sunset to sunrise')
     .replace(/\b(MON|TUE|WED|THU|FRI|SAT|SUN)\s?-\s?(MON|TUE|WED|THU|FRI|SAT|SUN)\b/g, (_, a: string, b: string) => `${DAYS[a]} to ${DAYS[b]}`)
-    .replace(/\b(MON|TUE|WED|THU|FRI|SAT|SUN)\b/g, (d: string) => DAYS[d])
+    .replace(/\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(?= ?\d{1,2}\b)/g, (m: string) => MONTHS[m])
     .replace(/\b(\d+(?:\.\d+)?)\s?MHZ\b/g, '$1 MHz')
     .replace(/\b(\d+(?:\.\d+)?)\s?KHZ\b/g, '$1 kHz')
     .replace(/\b(\d+)\s?(HRS?)\b/g, (_, n: string) => plural(n, 'hour', 'hours'))
     .replace(/\b(\d+)\s?(MINS?)\b/g, (_, n: string) => plural(n, 'minute', 'minutes'))
     .replace(/\b(\d+(?:\.\d+)?)\s?NM\b/g, '$1 NM')
     .replace(/\b(\d+)\s?FT\b/g, (_, n: string) => `${groupThousands(n)} ft`)
-    .replace(/\b(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?) ft\b/g, '$1-$2 ft')
-    .replace(/\b(\d+(?:\.\d+)?)\s?M\b(?!\s?(?:HZ|IN)\b)/g, '$1 m')
-    .replace(/\bHRS?\b/g, (w: string) => (w === 'HR' ? 'hour' : 'hours'))
-    .replace(/\bMINS?\b/g, 'minutes');
+    .replace(/\b(\d+(?:\.\d+)?)\s?M\b(?!\s?(?:HZ|IN)\b)/g, '$1 m');
 
   const tokens = [...out.matchAll(/\b[A-Z][A-Z0-9']*\b/g)];
+  const adjacent = (i: number, j: number) => {
+    const [first, second] = i < j ? [tokens[i], tokens[j]] : [tokens[j], tokens[i]];
+    if (!first || !second) return false;
+    return /^[ /]+$/.test(out.slice(first.index! + first[0].length, second.index!));
+  };
   let result = '';
   let last = 0;
-  let previous = '';
-  for (const match of tokens) {
+  tokens.forEach((match, i) => {
     const word = match[0];
     const index = match.index!;
     result += out.slice(last, index);
     last = index + word.length;
-    const gap = out.slice(index - 1, index);
-    let replacement: string;
+    const previous = i > 0 && adjacent(i - 1, i) ? tokens[i - 1][0] : '';
+    const next = i + 1 < tokens.length && adjacent(i, i + 1) ? tokens[i + 1][0] : '';
+    const parenthesised = out[index - 1] === '(' && out[index + word.length] === ')';
     const prefixed = /^([A-Z]+)(\d[\dA-Z]*)$/.exec(word);
-    if (WORDS[word]) replacement = WORDS[word];
-    else if (prefixed && WORDS[prefixed[1]]) replacement = `${WORDS[prefixed[1]]} ${prefixed[2]}`;
+    let replacement: string;
+    if (/\d/.test(word) && !(prefixed && WORDS[prefixed[1]])) replacement = word;
+    else if (word.length === 1) replacement = word;
     else if (KEEP_AS_WRITTEN.has(word) || keepSet.has(word) || US_STATES.has(word) || /^Z[A-Z]{2}$/.test(word)) replacement = word;
+    else if (IDENT_BEFORE.has(next) && word.length <= 5 && !FUNCTION_WORDS.has(word)) replacement = word;
+    else if (IDENT_AFTER.has(previous) && word.length <= 5 && !FUNCTION_WORDS.has(word) && !WORDS[word]) replacement = word;
+    else if (/^CY[ARD]$/.test(word) || parenthesised) replacement = word;
+    else if (WORDS[word]) replacement = WORDS[word];
+    else if (prefixed) replacement = `${WORDS[prefixed[1]]} ${prefixed[2]}`;
+    else if (DAYS[word]) replacement = DAYS[word];
+    else if (word === 'MIN') replacement = 'minimum';
+    else if (word === 'MINS') replacement = 'minimums';
     else if (ENGLISH_WITHOUT_VOWELS.has(word)) replacement = word.toLowerCase();
-    else if (/\d/.test(word) || word.length === 1) replacement = word;
-    else if (NAVAID_WORDS.has(previous) && gap === ' ' && word.length <= 3) replacement = word;
     else if (PHONETIC.has(word)) replacement = word[0] + word.slice(1).toLowerCase();
     else if (!/[AEIOU]/.test(word)) {
       replacement = word;
       unrecognised.add(word);
-    } else replacement = word.toLowerCase();
+    } else if ((word.length === 4 || word.length === 5) && !isEnglish(word)) replacement = word;
+    else replacement = word.toLowerCase();
     result += replacement;
-    previous = word;
-  }
+  });
   result += out.slice(last);
 
   result = result.replace(/(^|[.!?]\s+)([a-z])/g, (_, lead: string, letter: string) => lead + letter.toUpperCase());
@@ -692,48 +743,71 @@ function displayText(input: unknown): string {
 }
 
 function parseText(display: string): string {
+  const mapped = display
+    .replace(/[\u00a0\u2007\u202f\t\f\v]/g, ' ')
+    .replace(/[\u2010-\u2015\u2212]/g, '-')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"');
+  const upper = mapped.toUpperCase();
+  if (upper.length === mapped.length) return upper;
   let out = '';
-  for (const ch of display) {
-    let c = ch;
-    if (/[   \t\f\v]/.test(c)) c = ' ';
-    else if (/[‐-―−]/.test(c)) c = '-';
-    else if (c === '‘' || c === '’') c = "'";
-    else if (c === '“' || c === '”') c = '"';
-    const upper = c.toUpperCase();
-    out += upper.length === c.length ? upper : c;
+  for (const c of mapped) {
+    const u = c.toUpperCase();
+    out += u.length === c.length ? u : c;
   }
   return out;
 }
 
-const ICAO_HEADER = /^\s*(?:[A-Z]{4}\s+)?\(?\s*(?:[A-Z][A-Z0-9]{1,6}|\d{1,3})\/\d{2,5}\s+NOTAM[NRC]?\b/;
+const ICAO_HEADER = /^\s*(?:[A-Z]{4}\s+(?=\S))?\(?\s*(?:[A-Z][A-Z0-9]{1,6}|\d{1,3})\/\d{2,5}\s+NOTAM[NRC]?\b/;
+const HEADING = /^\s*(?:[A-Z0-9][A-Z0-9 .,'&\/-]*\(([A-Z0-9]{3,4})\)|[A-Z]{4}(?:\s*\([A-Z0-9 .,'&\/-]+\))?)\s*$/;
 const DOMESTIC_HEADER = /^\s*!\s?[A-Z0-9]{3,4}\s+\d{1,2}\/\d{1,5}\b/;
 const SHORT_FORM = /^\s*([A-Z]{4})\s+(?:RWY|RWYS|TWY|TWYS|APN|APRON|AD|NAV|OBST|SVC|COM|AIRSPACE|ILS|VOR|NDB|DME|LGT|FUEL|ATIS|PAPI|GP|LOC)\b/;
 const TIMING_TAIL = /(?:^|\s)(?:WEF\s+)?(\d{10})(?:\s*(?:-|TIL|UNTIL|TO)\s*(\d{10}|PERM|UFN)(\s?EST)?|\s+(UFN|PERM))?\s*$/;
 
+function locationLike(word: string): boolean {
+  return !WORDS[word] && !isEnglish(word) && !KEEP_AS_WRITTEN.has(word);
+}
+
 export function splitNotams(text: string): string[] {
   const display = displayText(text);
   if (!display) return [];
+  const lines = display.split('\n');
+  const uppers = lines.map((line) => parseText(line).trim());
+  const isHeader = uppers.map((u) => ICAO_HEADER.test(u) || DOMESTIC_HEADER.test(u));
+  const nextFilled = (i: number) => {
+    for (let j = i + 1; j < uppers.length; j++) if (uppers[j]) return j;
+    return -1;
+  };
+
   const chunks: string[][] = [];
   let current: string[] = [];
   let lastLine = '';
-  let sawE = false;
-  for (const line of display.split('\n')) {
-    const upper = parseText(line);
+  let blankBefore = true;
+  lines.forEach((line, i) => {
+    const upper = uppers[i];
+    if (!upper) {
+      current.push(line);
+      blankBefore = true;
+      return;
+    }
+    const after = nextFilled(i);
+    if (HEADING.test(upper) && !isHeader[i] && (after < 0 || isHeader[after])) {
+      blankBefore = true;
+      return;
+    }
     const started = lastLine !== '';
-    const header = ICAO_HEADER.test(upper) || DOMESTIC_HEADER.test(upper);
-    const short = started && SHORT_FORM.test(upper) && (sawE || TIMING_TAIL.test(lastLine) || /\b(?:UFN|PERM)$/.test(lastLine));
-    if ((header || short) && started) {
+    const short = SHORT_FORM.exec(upper);
+    const shortStart = started && !!short && (TIMING_TAIL.test(lastLine) || /\b(?:UFN|PERM)$/.test(lastLine) || (blankBefore && locationLike(short[1])));
+    if ((isHeader[i] || shortStart) && started) {
       chunks.push(current);
       current = [];
-      lastLine = '';
-      sawE = false;
     }
     current.push(line);
-    if (upper.trim()) lastLine = upper.trim();
-    if (/^\s*E\)/.test(upper)) sawE = true;
-  }
+    lastLine = upper;
+    blankBefore = false;
+  });
   chunks.push(current);
-  return chunks.map((lines) => lines.join('\n').trim()).filter(Boolean);
+  return chunks.map((chunkLines) => chunkLines.join('\n').trim()).filter(Boolean);
 }
 
 export function decodeNotams(text: string): DecodedNotam[] {
@@ -755,8 +829,9 @@ function parseCoordinate(degLat: string, minLat: string, secLat: string | undefi
 function findTextCoordinates(text: string): Array<{ raw: string; lat: number; lon: number }> {
   const found: Array<{ raw: string; lat: number; lon: number }> = [];
   const pattern = /\b(\d{2})(\d{2})(\d{2}(?:\.\d+)?)?([NS]) ?(\d{3})(\d{2})(\d{2}(?:\.\d+)?)?([EW])\b/g;
+  const upper = text.toUpperCase();
   let match: RegExpExecArray | null;
-  while ((match = pattern.exec(text.toUpperCase())) !== null) {
+  while ((match = pattern.exec(upper)) !== null) {
     if (!match[3] !== !match[7]) continue;
     const point = parseCoordinate(match[1], match[2], match[3], match[4], match[5], match[6], match[7], match[8]);
     if (point) found.push({ raw: match[0], ...point });
@@ -836,6 +911,8 @@ interface Item {
   upper: string;
 }
 
+const LIMIT_ONLY = /^\s*(?:SFC|GND|UNL|FL ?\d{2,3}|\d{1,6} ?(?:FT|M)(?: ?(?:AMSL|MSL|AGL|SFC|GND))?)\s*$/;
+
 const LATE_ITEM_SHAPE: Partial<Record<ItemCode, RegExp>> = {
   Q: /^\s*[A-Z]{4}\/Q/,
   A: /^\s*[A-Z]{4}\b/,
@@ -864,12 +941,19 @@ function splitItems(display: string, parse: string, issue: Report): Item[] {
       if (atLineStart) issue('warning', 'item-duplicated', code as IssueField, `Item ${code}) appears more than once; only the first is used.`);
       continue;
     }
-    if (inE) {
+    if (code === 'F' || code === 'G') {
+      if (atLineStart) {
+        if (!/^\s*(?:SFC|GND|UNL|FL|\d)/.test(after)) continue;
+      } else {
+        let value = parse.slice(valueStart, valueStart + 80).split('\n')[0];
+        if (code === 'F') value = value.split(/\sG\)/)[0];
+        const before = /([A-Z]+)[\s(]*$/.exec(parse.slice(Math.max(0, start - 12), start))?.[1] ?? '';
+        if (!LIMIT_ONLY.test(value) || ['SEE', 'AND', 'ITEM', 'OR', 'TO', 'IN', 'PER'].includes(before)) continue;
+        if (code === 'G' && !seen.has('F')) continue;
+      }
+    } else if (inE) {
       const shape = LATE_ITEM_SHAPE[code];
-      const late = code === 'F' || code === 'G' ? atLineStart || shape!.test(after) : atLineStart && !!shape && shape.test(after);
-      if (!late) continue;
-    } else if ((code === 'F' || code === 'G') && !atLineStart) {
-      continue;
+      if (!atLineStart || !shape || !shape.test(after)) continue;
     }
     seen.add(code);
     if (code === 'E') inE = true;
@@ -942,6 +1026,7 @@ function emptyResult(raw: string, format: DecodedNotam['format'], issues: NotamI
     raw, format, series: null, number: null, type: null, replaces: null, qLine: null, fields,
     effectiveFrom: null, effectiveTo: null, estimatedEnd: false, permanent: false, plainSummary,
     unrecognisedTokens: [], unstructured: true, issues, textCoordinates: [],
+    headline: null, statements: buildStatements(fields.find((f) => f.code === 'E')?.plain ?? ''), scheduleText: null, limitsText: null,
   };
 }
 
@@ -1000,12 +1085,31 @@ function decodeLineFormat(raw: string, display: string, parse: string, format: '
   let upperText = parse.slice(textStart).replace(/\s+/g, ' ').trim();
   let displayBody = display.slice(textStart).replace(/\s+/g, ' ').trim();
   let timing: Timing | null = null;
-  const tail = readTimingTail(upperText);
-  if (tail) {
-    timing = tail.timing;
-    upperText = upperText.slice(0, tail.index).trim();
-    displayBody = displayBody.slice(0, tail.index).trim();
+  const range = /(^|\s)(?:WEF\s+)?(\d{10})\s*(?:-|TIL|UNTIL)\s*(\d{10}|PERM|UFN)(\s?EST)?(?=[\s)]|$)/.exec(upperText);
+  if (range) {
+    const end = range[3];
+    timing = {
+      from: parseNotamTime(range[2]),
+      to: /^\d{10}$/.test(end) ? parseNotamTime(end) : null,
+      permanent: end === 'PERM',
+      untilFurtherNotice: end === 'UFN',
+      estimated: !!range[4],
+      fromRaw: range[2],
+      toRaw: `${end}${range[4] ? ' EST' : ''}`,
+    };
+    const start = range.index + range[1].length;
+    const stop = range.index + range[0].length;
+    upperText = `${upperText.slice(0, start)} ${upperText.slice(stop)}`.replace(/\s+/g, ' ').trim();
+    displayBody = `${displayBody.slice(0, start)} ${displayBody.slice(stop)}`.replace(/\s+/g, ' ').trim();
+  } else {
+    const tail = readTimingTail(upperText);
+    if (tail) {
+      timing = tail.timing;
+      upperText = upperText.slice(0, tail.index).trim();
+      displayBody = displayBody.slice(0, tail.index).trim();
+    }
   }
+  if (!timing) issues.push({ severity: 'error', code: 'field-missing', field: 'B', message: 'No start time was found. US domestic and short-form NOTAMs end with a time range such as 2610281200-2610290600.' });
   let plainUpper = upperText;
   const effective = /\bEFFECTIVE\s+(\d{10})\s*(?:UTC\s+)?(?:UNTIL|TIL)\s+(\d{10})\s*(?:UTC)?\.?/.exec(upperText);
   if (effective) {
@@ -1053,6 +1157,10 @@ function decodeLineFormat(raw: string, display: string, parse: string, format: '
     }),
     unrecognisedTokens: expandWithReport(englishUpper, keep).unrecognised,
     unstructured: false,
+    headline: null,
+    statements: buildStatements(fields.find((f) => f.code === 'E')?.plain ?? ''),
+    scheduleText: null,
+    limitsText: null,
     issues,
     textCoordinates: findTextCoordinates(upperText),
   };
@@ -1071,8 +1179,12 @@ export function decodeNotam(input: string): DecodedNotam {
     return emptyResult(raw, 'text', issues, [], 'Nothing was pasted.');
   }
 
-  if (splitNotams(display).length > 1) {
-    issue('warning', 'multiple-notams', 'header', 'This paste holds more than one NOTAM. Only the first is decoded here.');
+  const chunks = splitNotams(display);
+  if (chunks.length > 1) {
+    const first = decodeNotam(chunks[0]);
+    first.raw = raw;
+    first.issues.unshift({ severity: 'warning', code: 'multiple-notams', field: 'header', message: `This paste holds ${chunks.length} NOTAMs. Only the first is decoded here.` });
+    return first;
   }
 
   let parse = parseText(display);
@@ -1233,8 +1345,9 @@ export function decodeNotam(input: string): DecodedNotam {
 
   const e = up('E');
   if (e && qLine?.conditionCode && !unstructured && type !== 'NOTAMC') {
-    const saysClosed = CLOSED_WORDS.test(e);
-    const saysOpen = OPEN_WORDS.test(e);
+    const plainE = e.replace(/\bNOT (?:OPEN|OPN|AVBL|AVAILABLE|OPR|OPERATIONAL|SERVICEABLE)\b/g, 'CLSD');
+    const saysClosed = CLOSED_WORDS.test(plainE);
+    const saysOpen = OPEN_WORDS.test(plainE);
     if (CLOSED_CONDITIONS.has(qLine.conditionCode) && saysOpen && !saysClosed) {
       issue('warning', 'text-contradiction', 'E', `The Q-code says ${(qLine.conditionPlain ?? '').toLowerCase()}, but the E) text only says it is open or available.`);
     } else if (OPEN_CONDITIONS.has(qLine.conditionCode) && saysClosed && !saysOpen) {
@@ -1266,6 +1379,10 @@ export function decodeNotam(input: string): DecodedNotam {
     plainSummary,
     unrecognisedTokens,
     unstructured,
+    headline: headlineFor(qLine, issues),
+    statements: buildStatements(fields.find((field) => field.code === 'E')?.plain ?? '').map((statement) => (type === 'NOTAMC' ? { ...statement, status: 'info' as const } : statement)),
+    scheduleText: d ? capitalise(scheduleText(d, keep)) : null,
+    limitsText: limitsSentence(f, g, keep),
     issues,
     textCoordinates,
   };
@@ -1357,7 +1474,11 @@ function buildPlainSummary(parts: {
   if (parts.type === 'NOTAMC') out.push(parts.replaces ? `Cancels ${parts.replaces}.` : 'Cancels an earlier NOTAM.');
   if (parts.type === 'NOTAMR') out.push(parts.replaces ? `Replaces ${parts.replaces}.` : 'Replaces an earlier NOTAM.');
 
-  const where = aField ? `At ${aField.raw.toUpperCase().split(/\s+/).join(', ')}: ` : '';
+  const where = aField
+    ? parts.type === 'NOTAMC'
+      ? `The cancellation for ${aField.raw.toUpperCase().split(/\s+/).join(', ')} reads: `
+      : `At ${aField.raw.toUpperCase().split(/\s+/).join(', ')}: `
+    : '';
   const what = eField
     ? sentence(eField.plain)
     : subject
@@ -1387,4 +1508,55 @@ function buildPlainSummary(parts: {
   }
 
   return out.join(' ').trim();
+}
+
+const STATUS_TESTS: Array<[StatementStatus, RegExp]> = [
+  ['restricted', /\bshall not\b/i],
+  ['closed', /\b(?:closed|prohibited|not authorized|not permitted|cancelled)\b/i],
+  ['unserviceable', /\b(?:unserviceable|not available|unavailable|inoperative|out of service|withdrawn|degraded|intermittent|decommissioned)\b/i],
+  ['restricted', /\b(?:shall not|only|restricted|prior permission|prior notice|subject to|limited|reduced|maximum|must|shall|required)\b/i],
+  ['hazard', /\b(?:caution|hazard|crane|obstacle|activity|exercise|equipment may be|construction|work in progress|birds?|wildlife|unmanned|balloon|parachute|firing|demolition|blasting|aerobatic)\b/i],
+  ['available', /\b(?:available|open|operational|operating|resumed|reopened|established|in service)\b/i],
+];
+
+const STATUS_TAIL = /^(.+?)\s+(?:is\s+|are\s+)?(closed|unserviceable|not available|unavailable|inoperative|prohibited|not authorized)(?:\s+(due to .+|for .+))?$/i;
+
+function capitalise(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+export function buildStatements(plain: string): Statement[] {
+  const sentences = plain
+    .split(/(?<=[.!?])\s+(?=[A-Z(])/)
+    .map((sentence) => sentence.trim().replace(/[.]+$/, '').trim())
+    .filter(Boolean);
+  const out: Statement[] = [];
+  for (const sentence of sentences) {
+    const status = STATUS_TESTS.find(([, pattern]) => pattern.test(sentence))?.[0] ?? 'info';
+    const tail = status === 'closed' || status === 'unserviceable' ? STATUS_TAIL.exec(sentence) : null;
+    if (!tail) {
+      out.push({ status, subject: capitalise(sentence), detail: null });
+      continue;
+    }
+    const detail = tail[3] ? tail[3].trim() : null;
+    const parts = tail[1].split(/,\s+(?=(?:taxiway|runway|apron)\s)/i);
+    const listed = parts.length > 1 && parts.every((part) => /^(?:taxiway|runway|apron)\s+\S+\s+between\b/i.test(part));
+    for (const part of listed ? parts : [tail[1]]) out.push({ status, subject: capitalise(part.trim()), detail });
+  }
+  return out;
+}
+
+export function headlineFor(qLine: QLine | null, issues: NotamIssue[]): string | null {
+  if (!qLine?.subjectPlain) return null;
+  if (issues.some((i) => i.code === 'text-contradiction')) return `${qLine.subjectPlain}: the code and the text disagree`;
+  const condition = qLine.conditionCode && qLine.conditionCode !== 'XX' && !/ (is|are|now|to|of|from|by|than|due to)$/i.test(qLine.conditionPlain ?? '') ? qLine.conditionPlain : null;
+  return condition ? `${qLine.subjectPlain}: ${condition.charAt(0).toLowerCase()}${condition.slice(1)}` : qLine.subjectPlain;
+}
+
+function limitsSentence(f: string | null, g: string | null, keep: Iterable<string>): string | null {
+  if (!f && !g) return null;
+  const lower = f ? formatLimit(f, keep) : null;
+  const upper = g ? formatLimit(g, keep) : null;
+  const text = lower && upper ? `${lower} to ${upper}` : lower ? `${lower} and above` : `up to ${upper}`;
+  return capitalise(text.replace(/^the surface/, 'surface'));
 }

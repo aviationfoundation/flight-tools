@@ -1,5 +1,5 @@
 ---
-import type { DecodedNotam } from '../lib/notam';
+import { STATUS_LABELS, type DecodedNotam, type StatementStatus } from '../lib/notam';
 
 interface Props {
   decoded: DecodedNotam;
@@ -71,9 +71,21 @@ if (fromDate) {
   };
 }
 
-const headline = decoded.qLine?.subjectPlain
-  ? `${decoded.qLine.subjectPlain}${decoded.qLine.conditionPlain ? `: ${decoded.qLine.conditionPlain.charAt(0).toLowerCase()}${decoded.qLine.conditionPlain.slice(1)}` : ''}`
-  : null;
+const headline = decoded.headline;
+
+const STATUS_ORDER: StatementStatus[] = ['closed', 'unserviceable', 'restricted', 'hazard', 'available', 'info'];
+const groups = STATUS_ORDER.map((status) => ({
+  status,
+  label: decoded.type === 'NOTAMC' && status === 'info' ? 'What the cancellation says' : STATUS_LABELS[status],
+  items: decoded.statements.filter((s) => s.status === status),
+})).filter((g) => g.items.length);
+
+const facts = [
+  decoded.type === 'NOTAMC' && decoded.replaces ? { label: 'Cancels', value: decoded.replaces } : null,
+  decoded.type === 'NOTAMR' && decoded.replaces ? { label: 'Replaces', value: decoded.replaces } : null,
+  decoded.scheduleText ? { label: 'Active', value: `${decoded.scheduleText} (UTC)` } : null,
+  decoded.limitsText ? { label: 'Altitudes', value: decoded.limitsText } : null,
+].filter((f): f is { label: string; value: string } => !!f);
 
 const centre = decoded.qLine?.center ?? null;
 const wholeArea = (decoded.qLine?.radiusNm ?? 0) >= 999;
@@ -131,8 +143,39 @@ const qRows = decoded.qLine
       </div>
     </div>
     {headline && <p class="nd-headline-text">{headline}</p>}
-    <p class="nd-summary">{decoded.plainSummary}</p>
+    {facts.length > 0 && (
+      <dl class="nd-facts">
+        {facts.map((f) => (
+          <div>
+            <dt>{f.label}</dt>
+            <dd class="num">{f.value}</dd>
+          </div>
+        ))}
+      </dl>
+    )}
+    {groups.length === 0 && <p class="nd-summary">{decoded.plainSummary}</p>}
   </section>
+
+  {groups.length > 0 && (
+    <section class="nd-says" aria-label="What the NOTAM says">
+      {groups.map((group) => (
+        <div class={`nd-group is-${group.status}`}>
+          <h3 class="nd-group-title">
+            <span class="nd-group-mark" aria-hidden="true"></span>
+            {group.label}
+          </h3>
+          <ul>
+            {group.items.map((item) => (
+              <li>
+                {item.subject}
+                {item.detail && <span class="nd-group-detail">, {item.detail}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  )}
 
   {decoded.issues.length > 0 && (
     <section class={`nd-issues${errors.length ? ' has-errors' : ''}`} aria-label="Problems with this NOTAM">
@@ -386,6 +429,38 @@ const qRows = decoded.qLine
   .nd-field-raw { display: block; font-size: 12px; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   .nd-field-plain { margin: 6px 0 0; font-size: 14px; line-height: 1.6; }
   .nd-unstructured-text { margin-top: 0; }
+
+  .nd-facts { display: flex; flex-wrap: wrap; gap: 10px 32px; margin: 16px 0 0; }
+  .nd-facts div { min-width: 0; }
+  .nd-facts dt { font-size: 11.5px; letter-spacing: 0.02em; color: var(--on-band-muted); }
+  .nd-facts dd { margin: 2px 0 0; font-size: 15px; font-weight: 600; color: var(--on-band); }
+
+  .nd-says {
+    --tone-closed: var(--danger);
+    --tone-unserviceable: var(--warning);
+    --tone-restricted: var(--accent-blue);
+    --tone-hazard: #B54708;
+    --tone-available: var(--success);
+    --tone-info: var(--border-strong);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 28px 40px;
+    margin-top: 28px;
+  }
+  :global([data-theme='dark']) .nd-says { --tone-hazard: #F79A5B; --tone-restricted: #7FB2E8; }
+  .nd-group { min-width: 0; }
+  .nd-group-title { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 700; letter-spacing: 0.01em; }
+  .nd-group-mark { width: 10px; height: 10px; flex: none; background: var(--tone); }
+  .nd-group.is-closed { --tone: var(--tone-closed); }
+  .nd-group.is-unserviceable { --tone: var(--tone-unserviceable); }
+  .nd-group.is-restricted { --tone: var(--tone-restricted); }
+  .nd-group.is-hazard { --tone: var(--tone-hazard); }
+  .nd-group.is-available { --tone: var(--tone-available); }
+  .nd-group.is-info { --tone: var(--tone-info); }
+  .nd-group ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+  .nd-group li { position: relative; padding-left: 14px; font-size: 15px; line-height: 1.5; }
+  .nd-group li::before { content: ''; position: absolute; left: 0; top: 0.62em; width: 5px; height: 5px; background: var(--tone); }
+  .nd-group-detail { color: var(--text-muted); }
 
   .nd-issues { margin-top: 18px; padding: 14px 16px; border-left: 3px solid var(--warning); background: var(--warning-bg); font-size: 13.5px; line-height: 1.55; }
   .nd-issues.has-errors { border-left-color: var(--danger); background: var(--danger-bg); }
