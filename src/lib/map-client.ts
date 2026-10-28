@@ -2,6 +2,44 @@ import type { Map as MapLibreMap, LngLatBoundsLike } from 'maplibre-gl';
 
 export type MapLib = typeof import('maplibre-gl');
 
+const ATTRIBUTION =
+  '<a href="https://openmaptiles.org/" target="_blank" rel="noopener">© OpenMapTiles</a> <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>';
+
+interface StyleSource {
+  type: string;
+  url?: string;
+  tiles?: string[];
+  minzoom?: number;
+  maxzoom?: number;
+  attribution?: string;
+}
+
+const styleCache = new Map<string, Promise<object>>();
+
+function loadStyle(url: string): Promise<object> {
+  let pending = styleCache.get(url);
+  if (!pending) {
+    pending = (async () => {
+      const style = (await (await fetch(url)).json()) as { sources: Record<string, StyleSource> };
+      await Promise.all(
+        Object.values(style.sources).map(async (source) => {
+          delete source.attribution;
+          if (!source.url) return;
+          const tilejson = (await (await fetch(source.url)).json()) as { tiles?: string[]; minzoom?: number; maxzoom?: number };
+          if (!tilejson.tiles) return;
+          delete source.url;
+          source.tiles = tilejson.tiles;
+          if (tilejson.minzoom != null) source.minzoom = tilejson.minzoom;
+          if (tilejson.maxzoom != null) source.maxzoom = tilejson.maxzoom;
+        }),
+      );
+      return style;
+    })();
+    styleCache.set(url, pending);
+  }
+  return pending;
+}
+
 function styleUrl(): string {
   const dark = document.documentElement.getAttribute('data-theme') === 'dark';
   return `https://tiles.openfreemap.org/styles/${dark ? 'dark' : 'positron'}`;
@@ -18,20 +56,21 @@ export async function createMap(
 
   const map = new maplibre.Map({
     container,
-    style: styleUrl(),
     bounds: view.bounds,
     fitBoundsOptions: { padding: 24, maxZoom: view.maxZoom ?? 9 },
     cooperativeGestures: true,
     dragRotate: false,
     pitchWithRotate: false,
-    attributionControl: { compact: true },
+    attributionControl: false,
   });
+  map.setStyle((await loadStyle(styleUrl())) as never);
+  map.addControl(new maplibre.AttributionControl({ compact: false, customAttribution: ATTRIBUTION }), 'bottom-right');
   map.touchZoomRotate.disableRotation();
   map.addControl(new maplibre.NavigationControl({ showCompass: false }), 'top-right');
 
   map.on('style.load', () => addLayers(map, maplibre));
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    window.setTimeout(() => map.setStyle(styleUrl()), 0);
+    window.setTimeout(async () => map.setStyle((await loadStyle(styleUrl())) as never), 0);
   });
 
   await new Promise<void>((resolve, reject) => {
