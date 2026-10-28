@@ -34,6 +34,56 @@ if (decoded.effectiveFrom) {
   }
 }
 
+const MONTHS = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function fmtTime(t: { year: number; month: number; day: number; hour: number; minute: number }): string {
+  return `${pad2(t.day)} ${MONTHS[t.month]} ${t.year}, ${pad2(t.hour)}:${pad2(t.minute)}Z`;
+}
+
+function span(ms: number): string {
+  const minutes = Math.abs(ms) / 60000;
+  if (minutes < 90) return `${Math.max(1, Math.round(minutes))} min`;
+  if (minutes < 48 * 60) return `${Math.round(minutes / 60)} h`;
+  if (minutes < 60 * 1440) return `${Math.round(minutes / 1440)} days`;
+  const months = Math.round(minutes / 43800);
+  return `${months} month${months === 1 ? '' : 's'}`;
+}
+
+const fromDate = decoded.effectiveFrom ? toDate(decoded.effectiveFrom) : null;
+const toDateValue = decoded.effectiveTo && !decoded.permanent ? toDate(decoded.effectiveTo) : null;
+const startRelative = fromDate ? (fromDate > now ? `starts in ${span(fromDate.getTime() - now.getTime())}` : `started ${span(now.getTime() - fromDate.getTime())} ago`) : null;
+const endRelative = toDateValue
+  ? toDateValue > now
+    ? `ends in ${span(toDateValue.getTime() - now.getTime())}`
+    : `ended ${span(now.getTime() - toDateValue.getTime())} ago`
+  : decoded.permanent
+    ? 'no end date'
+    : null;
+
+let timeline: { nowPct: number; nowEdge: 'start' | 'end' | null; openEnded: boolean } | null = null;
+if (fromDate) {
+  const end = toDateValue ?? new Date(Math.max(now.getTime(), fromDate.getTime()) + 30 * 86400000);
+  const total = end.getTime() - fromDate.getTime();
+  const raw = total > 0 ? ((now.getTime() - fromDate.getTime()) / total) * 100 : 0;
+  timeline = {
+    nowPct: Math.max(0, Math.min(100, raw)),
+    nowEdge: raw < 0 ? 'start' : raw > 100 ? 'end' : null,
+    openEnded: !toDateValue,
+  };
+}
+
+const headline = decoded.qLine?.subjectPlain
+  ? `${decoded.qLine.subjectPlain}${decoded.qLine.conditionPlain ? `: ${decoded.qLine.conditionPlain.charAt(0).toLowerCase()}${decoded.qLine.conditionPlain.slice(1)}` : ''}`
+  : null;
+
+const coordMatch = decoded.qLine?.coordinates ? /^(\d{2})(\d{2})([NS])(\d{3})(\d{2})([EW])$/.exec(decoded.qLine.coordinates) : null;
+const area = coordMatch
+  ? {
+      lat: (Number(coordMatch[1]) + Number(coordMatch[2]) / 60) * (coordMatch[3] === 'S' ? -1 : 1),
+      lon: (Number(coordMatch[4]) + Number(coordMatch[5]) / 60) * (coordMatch[6] === 'W' ? -1 : 1),
+      radiusNm: decoded.qLine?.radiusNm ?? null,
+    }
+  : null;
+
 const FIELD_ORDER = ['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const;
 const orderedFields = FIELD_ORDER.map((code) => decoded.fields.find((f) => f.code === code)).filter((f): f is NonNullable<typeof f> => !!f);
 
@@ -52,50 +102,75 @@ const qRows = decoded.qLine
 ---
 
 <article class="nd">
-  <section class="nd-headline">
-    <div class="nd-headline-top">
-      <div class="nd-ident">
+  <section class={`nd-band tone-${status.tone}`}>
+    <div class="nd-band-top">
+      <div>
         <h2 class="nd-location num">{location.split(/\s+/)[0]}</h2>
         <p class="nd-sub">
           {decoded.series && decoded.number && <span class="num">{decoded.series}{decoded.number}</span>}
           {decoded.type && <span class="nd-type-chip">{decoded.type}</span>}
-          {decoded.replaces && <span class="nd-replaces">replaces {decoded.replaces}</span>}
-          {decoded.unstructured && <span class="nd-type-chip nd-type-chip-warn">Unstructured paste - best effort</span>}
+          {decoded.replaces && <span>replaces {decoded.replaces}</span>}
+          {decoded.unstructured && <span class="nd-type-chip">No A) to G) markers, decoded as plain text</span>}
         </p>
       </div>
-      <div class={`nd-status nd-status-${status.tone}`}>
+      <div class="nd-status">
         <span class="nd-status-dot" aria-hidden="true"></span>
         {status.label}
       </div>
     </div>
-
+    {headline && <p class="nd-headline-text">{headline}</p>}
     <p class="nd-summary">{decoded.plainSummary}</p>
+  </section>
 
-    {(decoded.effectiveFrom || decoded.effectiveTo || decoded.permanent) && (
-      <div class="nd-timing">
-        <div class="nd-timing-item">
-          <span class="col">Effective from</span>
-          <span class="num">{decoded.effectiveFrom ? `${pad2(decoded.effectiveFrom.day)} ${['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][decoded.effectiveFrom.month]} ${decoded.effectiveFrom.year} ${pad2(decoded.effectiveFrom.hour)}:${pad2(decoded.effectiveFrom.minute)}Z` : '-'}</span>
+  {fromDate && timeline && (
+    <section class="nd-when" aria-label="When this NOTAM applies">
+      <div class="nd-when-labels">
+        <div>
+          <span class="nd-when-label">From</span>
+          <span class="nd-when-time num">{fmtTime(decoded.effectiveFrom!)}</span>
+          {startRelative && <span class="nd-when-rel">{startRelative}</span>}
         </div>
-        <div class="nd-timing-item">
-          <span class="col">Effective until</span>
-          <span class="num">
-            {decoded.permanent
-              ? 'No end stated (permanent)'
-              : decoded.effectiveTo
-                ? `${pad2(decoded.effectiveTo.day)} ${['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][decoded.effectiveTo.month]} ${decoded.effectiveTo.year} ${pad2(decoded.effectiveTo.hour)}:${pad2(decoded.effectiveTo.minute)}Z${decoded.estimatedEnd ? ' (estimated)' : ''}`
-                : '-'}
+        <div class="nd-when-end">
+          <span class="nd-when-label">Until</span>
+          <span class="nd-when-time num">
+            {decoded.permanent ? 'Permanent' : decoded.effectiveTo ? `${fmtTime(decoded.effectiveTo)}${decoded.estimatedEnd ? ', estimated' : ''}` : 'Not stated'}
           </span>
+          {endRelative && <span class="nd-when-rel">{endRelative}</span>}
         </div>
       </div>
-    )}
-  </section>
+      <div class={`nd-when-track tone-${status.tone}${timeline.openEnded ? ' is-open' : ''}`}>
+        <span class="nd-when-bar"></span>
+        <span class={`nd-when-now${timeline.nowEdge ? ` at-${timeline.nowEdge}` : ''}`} style={`left:${timeline.nowPct}%`}>
+          <span class="nd-when-now-label">{timeline.nowEdge === 'end' ? 'Now, after the end' : timeline.nowEdge === 'start' ? 'Now, before the start' : 'Now'}</span>
+        </span>
+      </div>
+    </section>
+  )}
+
+  {area && (
+    <section class="nd-panel">
+      <header class="nd-panel-head">
+        <span class="col">Where it applies</span>
+        <span class="nd-panel-note num">
+          {decoded.qLine?.coordinates}{area.radiusNm != null ? `, ${area.radiusNm} nm radius` : ''}
+        </span>
+      </header>
+      <div
+        class="nd-map"
+        data-nd-map
+        data-lat={area.lat}
+        data-lon={area.lon}
+        data-radius={area.radiusNm ?? ''}
+        aria-label={`Map of the area this NOTAM covers, centred on ${decoded.qLine?.coordinates}${area.radiusNm != null ? ` with a ${area.radiusNm} nautical mile radius` : ''}`}
+      ></div>
+    </section>
+  )}
 
   {qRows.length > 0 && (
     <section class="nd-panel">
       <header class="nd-panel-head">
-        <span class="col">01 - Q-line</span>
-        <span class="nd-panel-note">The coded summary every NOTAM carries, expanded field by field</span>
+        <span class="col">Q-line</span>
+        <span class="nd-panel-note">The coded summary line, field by field</span>
       </header>
       <dl class="nd-qgrid">
         {qRows.map((row) => (
@@ -114,8 +189,8 @@ const qRows = decoded.qLine
   {!decoded.unstructured && orderedFields.length > 0 && (
     <section class="nd-panel">
       <header class="nd-panel-head">
-        <span class="col">02 - Item by item</span>
-        <span class="nd-panel-note">Each A)–G) item, translated</span>
+        <span class="col">Item by item</span>
+        <span class="nd-panel-note">Each lettered item, translated</span>
       </header>
       <ol class="nd-fields">
         {orderedFields.map((field) => (
@@ -134,8 +209,8 @@ const qRows = decoded.qLine
   {decoded.unstructured && (
     <section class="nd-panel">
       <header class="nd-panel-head">
-        <span class="col">02 - Decoded text</span>
-        <span class="nd-panel-note">No A)–G) markers were found, so the whole paste was expanded as free text</span>
+        <span class="col">Decoded text</span>
+        <span class="nd-panel-note">No lettered items were found, so the whole paste was decoded as text</span>
       </header>
       <p class="nd-field-plain nd-unstructured-text">{decoded.plainSummary}</p>
     </section>
@@ -143,15 +218,14 @@ const qRows = decoded.qLine
 
   {decoded.unrecognisedTokens.length > 0 && (
     <p class="nd-flagged">
-      {decoded.unrecognisedTokens.length} token{decoded.unrecognisedTokens.length === 1 ? '' : 's'} in the text
-      (<span class="num">{decoded.unrecognisedTokens.join(', ')}</span>) didn't match a contraction this decoder
-      knows. They're left exactly as written above rather than guessed at.
+      This decoder doesn't know {decoded.unrecognisedTokens.length === 1 ? 'this contraction' : 'these contractions'}:
+      <span class="num">{decoded.unrecognisedTokens.join(', ')}</span>. {decoded.unrecognisedTokens.length === 1 ? "It's" : "They're"} shown as written.
     </p>
   )}
 
   <section class="nd-panel">
     <header class="nd-panel-head">
-      <span class="col">03 - Raw text</span>
+      <span class="col">Raw text</span>
     </header>
     <pre class="nd-raw num">{decoded.raw}</pre>
   </section>
@@ -160,27 +234,111 @@ const qRows = decoded.qLine
 <style>
   .nd { display: block; margin-top: 40px; }
 
-  .nd-headline { border-top: 1px solid var(--border-strong); padding-top: 22px; }
-  .nd-headline-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 32px; flex-wrap: wrap; }
-  .nd-location { font-family: var(--font-archivo); font-size: clamp(30px, 5vw, 46px); font-weight: 700; letter-spacing: -0.02em; line-height: 1; margin: 0; }
-  .nd-sub { margin: 8px 0 0; font-size: 12.5px; color: var(--text-muted); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-  .nd-type-chip { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; padding: 2px 6px; border: 1px solid var(--border); color: var(--text-muted); }
-  .nd-type-chip-warn { border-color: var(--warning-border); color: var(--warning); }
-  .nd-replaces { font-style: italic; }
+  .nd-band {
+    --band: #3C4349;
+    --on-band: #FFFFFF;
+    --on-band-muted: rgba(255, 255, 255, 0.78);
+    --on-band-line: rgba(255, 255, 255, 0.32);
+    background: var(--band);
+    color: var(--on-band);
+    padding: 28px 32px 26px;
+  }
 
-  .nd-status { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; padding: 10px 16px; border: 1px solid var(--border); white-space: nowrap; }
-  .nd-status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
-  .nd-status-active { border-color: var(--success-border); color: var(--success); }
-  .nd-status-active .nd-status-dot { background: var(--success); }
-  .nd-status-future { border-color: var(--accent-blue); color: var(--accent-blue); }
-  .nd-status-future .nd-status-dot { background: var(--accent-blue); }
-  .nd-status-expired { color: var(--text-muted); }
-  .nd-status-unknown { color: var(--text-muted); }
+  .nd-band.tone-active { --band: #8A2F12; }
+  .nd-band.tone-future { --band: #0B3F73; }
+  .nd-band.tone-expired { --band: #3C4349; }
 
-  .nd-summary { margin: 20px 0 0; font-size: 16px; line-height: 1.6; max-width: 76ch; }
+  .nd-band-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px 32px; flex-wrap: wrap; }
+  .nd-location { font-family: var(--font-archivo); font-size: clamp(48px, 8vw, 88px); font-weight: 700; letter-spacing: -0.035em; line-height: 0.9; margin: 0; }
+  .nd-sub { margin: 12px 0 0; font-size: 12.5px; color: var(--on-band-muted); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .nd-type-chip { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; padding: 2px 6px; border: 1px solid var(--on-band-line); color: var(--on-band); }
 
-  .nd-timing { display: flex; gap: 40px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); flex-wrap: wrap; }
-  .nd-timing-item { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+  .nd-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 14px;
+    background: var(--on-band);
+    color: var(--band);
+    white-space: nowrap;
+  }
+
+  .nd-status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--band); flex-shrink: 0; }
+
+  .nd-headline-text {
+    margin: 22px 0 0;
+    padding-top: 18px;
+    border-top: 1px solid var(--on-band-line);
+    font-family: var(--font-archivo);
+    font-size: clamp(22px, 3vw, 30px);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+  }
+
+  .nd-summary { margin: 12px 0 0; font-size: 15px; line-height: 1.6; max-width: 76ch; color: var(--on-band-muted); }
+
+  .nd-when { margin-top: 28px; }
+
+  .nd-when-labels {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .nd-when-labels > div { display: flex; flex-direction: column; gap: 3px; }
+  .nd-when-end { text-align: right; align-items: flex-end; }
+  .nd-when-label { font-size: 12px; color: var(--text-muted); }
+  .nd-when-time { font-size: 15px; font-weight: 600; }
+  .nd-when-rel { font-size: 12.5px; color: var(--text-muted); }
+
+  .nd-when-track {
+    --band: #3C4349;
+    position: relative;
+    height: 12px;
+    margin: 14px 0 34px;
+    background: var(--surface-subtle);
+    border: 1px solid var(--border);
+  }
+
+  .nd-when-track.tone-active { --band: #8A2F12; }
+  .nd-when-track.tone-future { --band: #0B3F73; }
+
+  .nd-when-bar { position: absolute; inset: 0; background: var(--band); opacity: 0.85; }
+  .nd-when-track.is-open .nd-when-bar { background: linear-gradient(to right, var(--band) 70%, transparent); }
+
+  .nd-when-now {
+    position: absolute;
+    top: -6px;
+    bottom: -6px;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--fg);
+  }
+
+  .nd-when-now-label {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .nd-when-now.at-end .nd-when-now-label { left: auto; right: 0; transform: none; }
+  .nd-when-now.at-start .nd-when-now-label { left: 0; transform: none; }
+
+  .nd-map {
+    width: 100%;
+    aspect-ratio: 16 / 7;
+    min-height: 300px;
+    border: 1px solid var(--border);
+    background: var(--surface-card);
+  }
 
   .nd-panel { margin-top: 40px; }
   .nd-panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
@@ -207,6 +365,52 @@ const qRows = decoded.qLine
 
   @media (max-width: 640px) {
     .nd-headline-top { flex-direction: column; }
-    .nd-timing { gap: 24px; }
+  }
+  @media (max-width: 720px) {
+    .nd-band { padding: 22px 18px 20px; }
+    .nd-map { aspect-ratio: 4 / 3; }
   }
 </style>
+
+<script>
+  async function setupNotamMap() {
+    const el = document.querySelector<HTMLElement>('[data-nd-map]');
+    if (!el || el.dataset.ready) return;
+    el.dataset.ready = '1';
+    const lat = Number(el.dataset.lat);
+    const lon = Number(el.dataset.lon);
+    const radiusNm = el.dataset.radius ? Number(el.dataset.radius) : null;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+    const reach = Math.max(radiusNm ?? 5, 3);
+    const dLat = reach / 60;
+    const dLon = reach / (60 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
+    const ring: Array<[number, number]> = [];
+    if (radiusNm) {
+      for (let i = 0; i <= 96; i++) {
+        const angle = (i / 96) * Math.PI * 2;
+        ring.push([lon + Math.sin(angle) * dLon, lat + Math.cos(angle) * dLat]);
+      }
+    }
+
+    const { createMap, cssColor } = await import('../lib/map-client');
+    const accent = cssColor(document.documentElement, '--accent-blue') || '#00396E';
+    try {
+      await createMap(el, { bounds: [[lon - dLon * 1.3, lat - dLat * 1.3], [lon + dLon * 1.3, lat + dLat * 1.3]], maxZoom: 12 }, (map) => {
+        if (map.getSource('notam-centre')) return;
+        if (ring.length) {
+          map.addSource('notam-area', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring] } } });
+          map.addLayer({ id: 'notam-area-fill', type: 'fill', source: 'notam-area', paint: { 'fill-color': accent, 'fill-opacity': 0.14 } });
+          map.addLayer({ id: 'notam-area-line', type: 'line', source: 'notam-area', paint: { 'line-color': accent, 'line-width': 2 } });
+        }
+        map.addSource('notam-centre', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [lon, lat] } } });
+        map.addLayer({ id: 'notam-centre', type: 'circle', source: 'notam-centre', paint: { 'circle-radius': 5, 'circle-color': accent, 'circle-stroke-width': 2, 'circle-stroke-color': '#FFFFFF' } });
+      });
+    } catch {
+      el.closest('section')?.setAttribute('hidden', '');
+    }
+  }
+
+  setupNotamMap();
+  document.addEventListener('astro:after-swap', setupNotamMap);
+</script>

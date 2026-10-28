@@ -15,25 +15,46 @@ if (rawParam) {
   decoded = decodeNotam(rawParam);
 }
 
+function notamTime(date: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${String(date.getUTCFullYear()).slice(2)}${p(date.getUTCMonth() + 1)}${p(date.getUTCDate())}${p(date.getUTCHours())}00`;
+}
+
+const day = 86400000;
+const today = new Date();
+const startsAgo = notamTime(new Date(today.getTime() - 2 * day));
+const endsLater = notamTime(new Date(today.getTime() + 21 * day));
+const laterToday = notamTime(new Date(today.getTime() + 6 * 3600000));
+
 const examples = [
   {
     label: 'Runway closure',
-    raw: 'A0142/25 NOTAMN\nQ) KZDC/QMRLC/IV/NBO/A/000/999/3856N07727W005\nA) KIAD B) 2508310600 C) 2509302359 EST\nE) RWY 01L/19R CLSD DUE TO WIP. ACFT UNABLE FULL LGTH DEP RWY 01L/19R.\nF) SFC G) UNL',
+    raw: `A0142/26 NOTAMN\nQ) KZDC/QMRLC/IV/NBO/A/000/999/3856N07727W005\nA) KIAD B) ${startsAgo} C) ${endsLater} EST\nE) RWY 01L/19R CLSD DUE TO WIP. ACFT UNABLE FULL LGTH DEP RWY 01L/19R.\nF) SFC G) UNL`,
   },
   {
     label: 'Taxiway lighting',
-    raw: 'A0087/25 NOTAMN\nQ) KZLA/QLXAS/IV/NBO/A/000/999/3356N11824W002\nA) KLAX B) 2509010000 C) PERM\nE) TWY A EDGE LGTS U/S BTN TWY A1 AND TWY A4.\nF) SFC G) UNL',
+    raw: `A0087/26 NOTAMN\nQ) KZLA/QLYAS/IV/NBO/A/000/999/3356N11824W002\nA) KLAX B) ${startsAgo} C) PERM\nE) TWY A EDGE LGTS U/S BTN TWY A1 AND TWY A4.\nF) SFC G) UNL`,
   },
   {
     label: 'ILS outage',
-    raw: 'A0211/25 NOTAMN\nQ) KZNY/QICAS/IV/BO/A/000/999/4038N07346W005\nA) KJFK B) 2509011200 C) 2509011800\nE) ILS RWY 04L LOC U/S.\nF) SFC G) UNL',
+    raw: `A0211/26 NOTAMN\nQ) KZNY/QICAS/IV/BO/A/000/999/4038N07346W005\nA) KJFK B) ${startsAgo} C) ${laterToday}\nE) ILS RWY 04L LOC U/S.\nF) SFC G) UNL`,
   },
 ];
+
+const exampleCards = examples.map((example) => {
+  const d = decodeNotam(example.raw);
+  return {
+    ...example,
+    airport: d.fields.find((f) => f.code === 'A')?.raw ?? '',
+    headline: d.qLine?.subjectPlain ? `${d.qLine.subjectPlain}: ${(d.qLine.conditionPlain ?? '').toLowerCase()}` : example.label,
+    text: d.fields.find((f) => f.code === 'E')?.raw ?? '',
+  };
+});
 ---
 
 <Layout
   title={decoded?.fields.find((f) => f.code === 'A') ? `${decoded.fields.find((f) => f.code === 'A')?.raw} NOTAM decoded · aviation.foundation` : 'NOTAM Decoder · aviation.foundation'}
-  description="Paste an ICAO-format NOTAM and read it in plain English: the Q-line's subject and condition codes expanded, every A)-G) item translated, and the FAA/ICAO contraction set spelled out. Free, no account, no advertising."
+  description="Paste a NOTAM and read it in plain English, with the Q-line codes and contractions spelled out and the affected area on a map."
   currentPath="/tools/notam"
 >
   <div class="page-container container-site px-site">
@@ -42,10 +63,8 @@ const examples = [
       <div class="eyebrow">Flight planning tool</div>
       <h1 class="serif page-title">NOTAM Decoder</h1>
       <p class="page-lead">
-        Paste a NOTAM and read it as a sentence instead of a teletype line. The Q-line's subject and
-        condition codes are expanded, every A)–G) item is translated, and the contraction set inside
-        the free text - RWY, TWY, U/S, WIP and the rest - is spelled out in full. Anything this
-        decoder doesn't recognise is left exactly as written rather than guessed at.
+        Paste a NOTAM to read it in plain English. The coded Q-line, each lettered item and the
+        contractions in the text are spelled out, and the area it covers is drawn on a map.
       </p>
     </header>
 
@@ -62,20 +81,21 @@ const examples = [
         >{rawParam}</textarea>
         <div class="nt-paste-actions">
           <p class="nt-paste-help">
-            Copy the full NOTAM, headers and all - the A)/B)/C)/E) markers are what this decoder keys
-            off. Older US domestic-format NOTAMs (no letter markers) are decoded as loose text on a
-            best-effort basis.
+            Paste the whole NOTAM, including the Q) line and the lettered items. US domestic NOTAMs
+            without them are decoded as plain text.
           </p>
           <button type="submit" class="btn-solid">Decode</button>
         </div>
       </form>
 
+      {decoded && (
       <div class="nt-examples">
         <span class="col">Try</span>
         {examples.map((example) => (
           <a href={`/tools/notam?raw=${encodeURIComponent(example.raw)}`} class="nt-example">{example.label}</a>
         ))}
       </div>
+      )}
     </section>
 
     {errorMessage && <div class="form-alert nt-alert" data-tone="warning" role="status">{errorMessage}</div>}
@@ -84,33 +104,23 @@ const examples = [
       <NotamDecoder decoded={decoded} />
     ) : (
       !errorMessage && (
-        <section class="nt-intro">
-          <div class="nt-intro-grid">
-            <div>
-              <div class="col">What it decodes</div>
-              <p>
-                The ICAO Annex 15 item structure (A through G), the Q-line's FIR, subject code,
-                condition code, traffic type, purpose, scope and altitude/radius block, and the FAA/
-                ICAO contraction set used inside the free-text E) item.
-              </p>
-            </div>
-            <div>
-              <div class="col">Why there's no live lookup</div>
-              <p>
-                The FAA's NOTAM Search API requires a client id issued to a registered operator, and
-                there is no public unauthenticated feed the way there is for METAR/TAF. Paste a NOTAM
-                from ForeFlight, 1800wxbrief, or the FAA's own NOTAM Search, and this decodes it.
-              </p>
-            </div>
-            <div>
-              <div class="col">What it will not do</div>
-              <p>
-                Guess. A contraction this decoder doesn't recognise is shown unchanged in the plain-
-                English text rather than approximated, and this is a study and planning tool - not a
-                substitute for an official briefing before a flight.
-              </p>
-            </div>
-          </div>
+        <section class="nt-intro" aria-labelledby="nt-examples-title">
+          <h2 class="nt-intro-title" id="nt-examples-title">Start with an example</h2>
+          <ul class="nt-cards">
+            {exampleCards.map((card) => (
+              <li>
+                <a href={`/tools/notam?raw=${encodeURIComponent(card.raw)}`} class="nt-card">
+                  <span class="nt-card-airport num">{card.airport}</span>
+                  <span class="nt-card-headline">{card.headline}</span>
+                  <code class="nt-card-raw num">{card.text}</code>
+                </a>
+              </li>
+            ))}
+          </ul>
+          <p class="nt-intro-note">
+            There's no public NOTAM feed to look these up automatically. The FAA's NOTAM API needs a
+            registered account, so paste one from your briefing service.
+          </p>
         </section>
       )
     )}
@@ -139,9 +149,28 @@ const examples = [
 
   .nt-alert { margin-top: 26px; max-width: 760px; }
 
-  .nt-intro { margin-top: 52px; border-top: 1px solid var(--border); padding-top: 28px; }
-  .nt-intro-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 32px; }
-  .nt-intro-grid p { margin: 10px 0 0; font-size: 13px; line-height: 1.65; color: var(--text-muted); }
+  .nt-intro { margin-top: 52px; }
+  .nt-intro-title { font-family: var(--font-sans); font-size: 15px; font-weight: 600; margin: 0 0 14px; }
+  .nt-cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .nt-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    height: 100%;
+    padding: 18px;
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    color: var(--fg);
+    text-decoration: none;
+    transition: border-color var(--dur-fast) var(--ease-out);
+  }
+  .nt-card:hover { border-color: var(--border-strong); }
+  .nt-card:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+  .nt-card-airport { font-family: var(--font-archivo); font-size: 30px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; }
+  .nt-card-headline { font-size: 15px; font-weight: 600; }
+  .nt-card-raw { margin-top: auto; font-size: 11.5px; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; line-height: 1.5; }
+  .nt-intro-note { margin: 16px 0 0; font-size: 12.5px; color: var(--text-muted); max-width: 70ch; }
+  @media (max-width: 860px) { .nt-cards { grid-template-columns: minmax(0, 1fr); } }
 
   @media (max-width: 640px) {
     .nt-paste-actions { flex-direction: column; align-items: stretch; }

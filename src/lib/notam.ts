@@ -453,7 +453,9 @@ export function expandContractions(text: string): string {
   for (const [pattern, replacement] of CONTRACTIONS) {
     out = out.replace(pattern, replacement);
   }
-  return out.replace(PLAIN_WORDS, (word) => word.toLowerCase());
+  return out
+    .replace(PLAIN_WORDS, (word) => word.toLowerCase())
+    .replace(/(^|[.!?]\s+)([a-z])/g, (_, lead: string, letter: string) => lead + letter.toUpperCase());
 }
 
 export function parseNotamTime(token: string): NotamTime | null {
@@ -656,7 +658,7 @@ function buildPlainSummary(parts: {
 
   const chunks: string[] = [];
   if (aField) chunks.push(`At ${aField.raw.split(/\s+/).join(', ')}`);
-  if (subject) chunks.push(condition ? `${subject.toLowerCase()} - ${condition.toLowerCase()}` : subject.toLowerCase());
+  if (subject) chunks.push(condition ? `${subject.toLowerCase()} ${condition.toLowerCase()}` : subject.toLowerCase());
   const lead = chunks.join(', ') || 'This NOTAM';
 
   const bodyText = eField ? expandContractions(eField.raw) : 'no free-text description was included.';
