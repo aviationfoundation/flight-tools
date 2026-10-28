@@ -125,7 +125,7 @@ const ticks = Array.from({ length: 36 }, (_, i) => {
 
 const cardinals = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((deg) => {
   const rad = (deg * Math.PI) / 180;
-  const r = R - 24;
+  const r = R + 14;
   return {
     deg,
     label: deg === 0 ? 'N' : deg === 90 ? 'E' : deg === 180 ? 'S' : deg === 270 ? 'W' : pad2(deg / 10),
@@ -222,6 +222,32 @@ const visSegments = VIS_STOPS.slice(0, -1).map((low, i) => {
 
 const visMiles = report.visibility?.statuteMiles ?? null;
 
+function categoryForVis(miles: number | null): FlightCategory {
+  if (miles == null) return 'UNKNOWN';
+  return miles < 1 ? 'LIFR' : miles < 3 ? 'IFR' : miles <= 5 ? 'MVFR' : 'VFR';
+}
+
+function categoryForCeiling(ft: number | null, hasClouds: boolean): FlightCategory {
+  if (ft == null) return hasClouds ? 'VFR' : 'UNKNOWN';
+  return ft < 500 ? 'LIFR' : ft < 1000 ? 'IFR' : ft <= 3000 ? 'MVFR' : 'VFR';
+}
+
+const visCategory = categoryForVis(visMiles);
+
+const visZones = visSegments.reduce<Array<{ cat: FlightCategory; start: number; count: number }>>((zones, segment, i) => {
+  const last = zones[zones.length - 1];
+  if (last && last.cat === segment.cat) last.count += 1;
+  else zones.push({ cat: segment.cat, start: i, count: 1 });
+  return zones;
+}, []).map((zone) => ({
+  ...zone,
+  leftPct: (zone.start / VIS_SEGMENTS) * 100,
+  widthPct: (zone.count / VIS_SEGMENTS) * 100,
+  active: zone.cat === visCategory,
+}));
+
+const visMarkerPct = visMiles != null ? visPct(visMiles) : null;
+
 const altBars = [
   { label: 'Field elevation', value: elevationFt, note: 'Surveyed height of the airport reference point.' },
   { label: 'Pressure altitude', value: pressureAlt, note: 'Field elevation corrected to the standard 29.92 inHg datum.' },
@@ -245,7 +271,7 @@ function conditionSummary(period: TafPeriod): string {
     parts.push(
       period.wind.calm
         ? 'calm'
-        : `${period.wind.variable ? 'VRB' : pad2(period.wind.directionDeg ?? 0)}°/${period.wind.speedKt ?? '-'}${period.wind.gustKt ? `G${period.wind.gustKt}` : ''} kt`,
+        : `${period.wind.variable || period.wind.directionDeg == null ? 'variable' : `${String(period.wind.directionDeg).padStart(3, '0')}°`} ${period.wind.speedKt ?? '-'}${period.wind.gustKt ? `G${period.wind.gustKt}` : ''} kt`,
     );
   }
   if (period.visibility) {
@@ -258,7 +284,7 @@ function conditionSummary(period: TafPeriod): string {
   for (const wx of period.weather) parts.push(wx.text.toLowerCase());
   const ceil = ceilingFt(period.clouds);
   if (ceil != null) parts.push(`ceiling ${fmtInt(ceil)} ft`);
-  else if (period.clouds.length) parts.push(period.clouds.map((c) => `${c.cover}${c.baseFt != null ? fmtInt(c.baseFt) : ''}`).join(' '));
+  else if (period.clouds.length) parts.push(period.clouds.map((c) => `${c.cover}${c.baseFt != null ? ` ${fmtInt(c.baseFt)} ft` : ''}`).join(', '));
   else if (period.cavok) parts.push('CAVOK');
   return parts.join(' · ') || 'No change stated';
 }
@@ -317,6 +343,84 @@ if (taf && taf.validFrom && taf.validTo) {
   }
 }
 
+function pad3(n: number): string {
+  return String(n).padStart(3, '0');
+}
+
+function windCell(period: TafPeriod): { text: string; deg: number | null } {
+  if (!period.wind) return { text: 'No change', deg: null };
+  if (period.wind.calm) return { text: 'Calm', deg: null };
+  const speed = `${period.wind.speedKt ?? '-'}${period.wind.gustKt ? `G${period.wind.gustKt}` : ''} kt`;
+  if (period.wind.variable || period.wind.directionDeg == null) return { text: `Variable ${speed}`, deg: null };
+  return { text: `${pad3(period.wind.directionDeg)}° ${speed}`, deg: period.wind.directionDeg };
+}
+
+function visCell(period: TafPeriod): { text: string; category: FlightCategory } {
+  if (period.cavok) return { text: 'CAVOK', category: 'VFR' };
+  const sm = period.visibility?.statuteMiles ?? null;
+  if (!period.visibility || sm == null) return { text: 'No change', category: 'UNKNOWN' };
+  const miles = formatMiles(Math.round(sm * 100) / 100);
+  return { text: `${miles}${period.visibility.greaterThan ? '+' : ''} sm`, category: categoryForVis(sm) };
+}
+
+function ceilingCell(period: TafPeriod): { text: string; category: FlightCategory } {
+  const ceil = ceilingFt(period.clouds);
+  if (ceil != null) {
+    const layer = period.clouds.find((c) => c.baseFt === ceil && (c.cover === 'BKN' || c.cover === 'OVC' || c.cover === 'VV'));
+    return { text: `${layer?.cover ?? ''} ${fmtInt(ceil)} ft`.trim(), category: categoryForCeiling(ceil, true) };
+  }
+  if (period.cavok) return { text: 'No ceiling', category: 'VFR' };
+  if (period.clouds.length) return { text: 'No ceiling', category: 'VFR' };
+  return { text: 'No change', category: 'UNKNOWN' };
+}
+
+const prevailingBlocks = timelineBlocks.filter((b) => b.row === 'prevailing');
+
+const tempLaneRows: number[] = [];
+const temporaryBlocks = timelineBlocks
+  .filter((b) => b.row === 'amendment')
+  .map((block) => {
+    let row = tempLaneRows.findIndex((end) => end <= block.leftPct + 0.01);
+    if (row === -1) {
+      row = tempLaneRows.length;
+      tempLaneRows.push(0);
+    }
+    tempLaneRows[row] = block.leftPct + block.widthPct;
+    return { ...block, laneRow: row };
+  });
+const tempLaneCount = Math.max(1, tempLaneRows.length);
+
+const meteogramLanes = prevailingBlocks.map((block) => ({
+  leftPct: block.leftPct,
+  widthPct: block.widthPct,
+  wind: windCell(block.period),
+  vis: visCell(block.period),
+  ceiling: ceilingCell(block.period),
+}));
+
+const meteogramData = timelineStart && timelineEnd
+  ? {
+      start: timelineStart.getTime(),
+      end: timelineEnd.getTime(),
+      now: nowPct != null ? now.getTime() : null,
+      blocks: timelineBlocks.map((block) => {
+        const span = timelineEnd!.getTime() - timelineStart!.getTime();
+        return {
+          from: timelineStart!.getTime() + (block.leftPct / 100) * span,
+          to: timelineStart!.getTime() + ((block.leftPct + block.widthPct) / 100) * span,
+          row: block.row,
+          category: block.category,
+          label: block.period.kind === 'INITIAL' ? 'Initial' : block.period.kindLabel,
+          probability: block.period.probability,
+          summary: block.summary,
+        };
+      }),
+    }
+  : null;
+
+const estimatedBaseText =
+  estimatedBase == null ? '-' : estimatedBase < 100 ? 'Saturated near the surface' : `${fmtInt(estimatedBase)} ft AGL`;
+
 function tokenStrip(raw: string, tokens: Array<{ start: number; end: number }>) {
   const out: Array<{ gap: string; index: number }> = [];
   let cursor = 0;
@@ -360,8 +464,8 @@ const faqItems = [
 
 <article class="wx" data-obs-iso={observedAt ? observedAt.toISOString() : undefined}>
 
-  <section class="wx-headline" aria-labelledby="wx-headline-title">
-    <div class="wx-headline-top">
+  <section class={`wx-hl ${categoryClass}`} aria-labelledby="wx-headline-title">
+    <div class="wx-hl-top">
       <div class="wx-ident">
         <h2 class="wx-station num" id="wx-headline-title">{report.station ?? station?.icao ?? 'Report'}</h2>
         <p class="wx-station-name">
@@ -383,22 +487,45 @@ const faqItems = [
         </p>
       </div>
 
-      <div class={`wx-category ${categoryClass}`}>
-        <span class="wx-category-code">{category}</span>
+      <div class="wx-category">
+        <span class="wx-category-code">{category === 'UNKNOWN' ? 'No category' : category}</span>
         <span class="wx-category-meaning">{CATEGORY_MEANING[category]}</span>
       </div>
     </div>
 
-    <div class="wx-stat-band">
-      {headlineStats.map((stat) => (
-        <div class="wx-stat">
-          <div class="col">{stat.label}</div>
-          <div class="wx-stat-value serif num">{stat.value}</div>
-          <div class="wx-stat-unit num">{stat.unit}</div>
-        </div>
-      ))}
+    <div class="wx-hl-raw">
+      <p class="wx-strip wx-hl-strip" data-strip="metar">
+        {metarStrip.pieces.map((piece) => (
+          <>
+            {piece.gap && <span class="wx-gap">{piece.gap}</span>}
+            <button
+              type="button"
+              class="wx-tok"
+              data-kind={report.tokens[piece.index].kind}
+              data-tok={piece.index}
+              data-label={report.tokens[piece.index].label}
+              data-plain={report.tokens[piece.index].plain}
+              aria-describedby={`wx-dec-${piece.index}`}
+            >{report.tokens[piece.index].raw}</button>
+          </>
+        ))}
+        {metarStrip.tail && <span class="wx-gap">{metarStrip.tail}</span>}
+      </p>
+      <p class="wx-hl-readout" data-wx-readout aria-live="polite">
+        <span class="wx-hl-readout-hint">Hover or tap any group in the report to read it.</span>
+      </p>
     </div>
   </section>
+
+  <div class="wx-stat-band">
+    {headlineStats.map((stat) => (
+      <div class="wx-stat">
+        <div class="col">{stat.label}</div>
+        <div class="wx-stat-value serif num">{stat.value}</div>
+        <div class="wx-stat-unit num">{stat.unit}</div>
+      </div>
+    ))}
+  </div>
 
   {flags.length > 0 && (
     <section class="wx-flags" aria-label="Conditions worth noting">
@@ -421,11 +548,11 @@ const faqItems = [
       data-runway={defaultRunway}
     >
       <header class="wx-panel-head">
-        <span class="col">01 - Wind</span>
+        <span class="col">Wind</span>
         <span class="wx-panel-note">Directions are true north, as reported</span>
       </header>
 
-      <svg class="wx-dial" viewBox="0 0 240 240" role="img" aria-label={report.wind ? `Wind ${report.wind.raw}` : 'Wind not reported'}>
+      <svg class="wx-dial" viewBox="-24 -24 288 288" role="img" aria-label={report.wind ? `Wind ${report.wind.raw}` : 'Wind not reported'}>
         <circle cx={CX} cy={CY} r={R} class="dial-ring" />
         <circle cx={CX} cy={CY} r={R - 34} class="dial-ring-inner" />
 
@@ -516,7 +643,7 @@ const faqItems = [
 
     <div class="wx-panel">
       <header class="wx-panel-head">
-        <span class="col">02 - Sky</span>
+        <span class="col">Sky</span>
         <span class="wx-panel-note">Coverage shown in eighths, as reported</span>
       </header>
 
@@ -579,7 +706,7 @@ const faqItems = [
 
     <div class="wx-panel">
       <header class="wx-panel-head">
-        <span class="col">03 - Air</span>
+        <span class="col">Air</span>
         <span class="wx-panel-note">Performance figures are standard approximations</span>
       </header>
 
@@ -631,7 +758,7 @@ const faqItems = [
       <dl class="wx-facts">
         <div><dt>Relative humidity</dt><dd class="num">{humidity != null ? `${Math.round(humidity)}%` : '-'}</dd></div>
         <div><dt>Temperature / dew point spread</dt><dd class="num">{spread != null ? `${(Math.round(spread * 10) / 10).toFixed(1)} °C` : '-'}</dd></div>
-        <div><dt>Estimated cloud base</dt><dd class="num">{estimatedBase != null ? `${fmtInt(estimatedBase)} ft AGL` : '-'}</dd></div>
+        <div><dt>Estimated cloud base <span class="wx-derived">derived</span></dt><dd class="num">{estimatedBaseText}</dd></div>
         <div><dt>Altimeter</dt><dd class="num">{report.altimeterInHg != null ? `${report.altimeterInHg.toFixed(2)} inHg · ${report.altimeterHpa!.toFixed(0)} hPa` : '-'}</dd></div>
         {report.seaLevelPressureHpa != null && (
           <div><dt>Sea-level pressure</dt><dd class="num">{report.seaLevelPressureHpa.toFixed(1)} hPa</dd></div>
@@ -643,21 +770,33 @@ const faqItems = [
 
   <section class="wx-visibility">
     <header class="wx-panel-head">
-      <span class="col">04 - Visibility and present weather</span>
+      <span class="col">Visibility and present weather</span>
       <span class="wx-panel-note">Bands show the category prevailing visibility alone would give</span>
     </header>
 
     <div class="wx-vis-scale">
+      <div class="wx-vis-zones">
+        {visZones.map((zone) => (
+          <span
+            class={`wx-vis-zone cat-${zone.cat.toLowerCase()}${zone.active ? ' is-active' : ''}`}
+            style={`left:${zone.leftPct}%;width:${zone.widthPct}%`}
+          >
+            {zone.cat}
+            {zone.active && visMiles != null && (
+              <span class="wx-vis-zone-value num">{report.visibility?.greaterThan ? '10+' : formatMiles(Math.round(visMiles * 100) / 100)} sm</span>
+            )}
+          </span>
+        ))}
+      </div>
       <div class="wx-vis-track">
         {visSegments.map((segment) => (
-          <span class={`wx-vis-seg cat-${segment.cat.toLowerCase()}`} style={`width:${100 / VIS_SEGMENTS}%`}></span>
+          <span
+            class={`wx-vis-seg cat-${segment.cat.toLowerCase()}${segment.cat === visCategory ? ' is-active' : ''}`}
+            style={`width:${100 / VIS_SEGMENTS}%`}
+          ></span>
         ))}
-        {visMiles != null && (
-          <span class="wx-vis-marker" style={`left:${visPct(visMiles)}%`}>
-            <span class="wx-vis-marker-label num">
-              {report.visibility?.greaterThan ? '10+' : formatMiles(Math.round(visMiles * 100) / 100)} sm
-            </span>
-          </span>
+        {visMarkerPct != null && (
+          <span class="wx-vis-marker" style={`left:${visMarkerPct}%`}></span>
         )}
       </div>
       <div class="wx-vis-ticks num">
@@ -696,27 +835,8 @@ const faqItems = [
     </div>
   </section>
 
-  <section class="wx-raw" id="wx-raw">
-    <header class="wx-panel-head">
-      <span class="col">05 - Group by group</span>
-      <span class="wx-panel-note">Hover or focus any group to tie it to its meaning</span>
-    </header>
-
-    <p class="wx-strip" data-strip="metar">
-      {metarStrip.pieces.map((piece) => (
-        <>
-          {piece.gap && <span class="wx-gap">{piece.gap}</span>}
-          <button
-            type="button"
-            class="wx-tok"
-            data-kind={report.tokens[piece.index].kind}
-            data-tok={piece.index}
-            aria-describedby={`wx-dec-${piece.index}`}
-          >{report.tokens[piece.index].raw}</button>
-        </>
-      ))}
-      {metarStrip.tail && <span class="wx-gap">{metarStrip.tail}</span>}
-    </p>
+  <details class="wx-raw" id="wx-raw">
+    <summary>Every group in this report, decoded</summary>
 
     <ol class="wx-decode" data-decode="metar">
       {report.tokens.map((token, index) => (
@@ -727,107 +847,155 @@ const faqItems = [
         </li>
       ))}
     </ol>
+  </details>
 
-    {report.warnings.length > 0 && (
-      <p class="wx-panel-warning">
-        {report.warnings.length} group{report.warnings.length === 1 ? '' : 's'} in this report
-        ({report.warnings.join(', ')}) fall outside what this decoder recognises. They are shown
-        unchanged rather than guessed at.
-      </p>
-    )}
-  </section>
+  {report.warnings.length > 0 && (
+    <p class="wx-panel-warning">
+      {report.warnings.length} group{report.warnings.length === 1 ? '' : 's'} in this report
+      ({report.warnings.join(', ')}) fall outside what this decoder recognises. They are shown
+      unchanged rather than guessed at.
+    </p>
+  )}
 
   {taf ? (
     <section class="wx-taf">
       <header class="wx-panel-head">
-        <span class="col">06 - Terminal aerodrome forecast</span>
+        <span class="col">Forecast (TAF)</span>
         <span class="wx-panel-note">
           {taf.issued ? `Issued ${pad2(taf.issued.day)} at ${pad2(taf.issued.hour)}:${pad2(taf.issued.minute)}Z` : 'Issue time not stated'}
           {taf.amended ? ' · amended' : ''}
         </span>
       </header>
 
-      {timelineBlocks.length > 0 && timelineStart && timelineEnd ? (
-        <div class="wx-timeline">
-          <div class="wx-timeline-ruler num">
+      {timelineBlocks.length > 0 && timelineStart && timelineEnd && meteogramData ? (
+        <div
+          class="wx-mg"
+          data-wx-mg={JSON.stringify(meteogramData)}
+          tabindex="0"
+          role="group"
+          aria-label="Forecast timeline. Use the left and right arrow keys to step through the forecast an hour at a time."
+        >
+          <div class="wx-mg-ruler num" aria-hidden="true">
             {timelineHours.map((tick) => (
               <span class={tick.major ? 'major' : ''} style={`left:${tick.pct}%`}>{tick.label}</span>
             ))}
           </div>
 
-          <div class="wx-timeline-rows">
-            <div class="wx-timeline-row">
-              <span class="wx-timeline-rowlabel col">Prevailing</span>
-              <div class="wx-timeline-track">
-                {timelineBlocks.filter((b) => b.row === 'prevailing').map((block) => (
-                  <span
-                    class={`wx-block cat-${block.category.toLowerCase()}`}
-                    style={`left:${block.leftPct}%;width:${block.widthPct}%`}
-                    title={`${block.label} · ${block.summary}`}
-                  >
-                    <span class="wx-block-label num">{block.label}</span>
+          <div class="wx-mg-body">
+            <div class="wx-mg-lane wx-mg-lane-cat">
+              <span class="wx-mg-name">Category</span>
+              <div class="wx-mg-track">
+                {prevailingBlocks.map((block) => (
+                  <span class={`wx-mg-block cat-${block.category.toLowerCase()}`} style={`left:${block.leftPct}%;width:${block.widthPct}%`}>
+                    <span class="wx-mg-block-cat">{block.category === 'UNKNOWN' ? '?' : block.category}</span>
+                    <span class="wx-mg-block-label num">{block.label}</span>
                   </span>
                 ))}
-                {nowPct != null && <span class="wx-now" style={`left:${nowPct}%`}><span class="wx-now-label col">Now</span></span>}
               </div>
             </div>
 
-            <div class="wx-timeline-row">
-              <span class="wx-timeline-rowlabel col">Temporary</span>
-              <div class="wx-timeline-track">
-                {timelineBlocks.filter((b) => b.row === 'amendment').length ? (
-                  timelineBlocks.filter((b) => b.row === 'amendment').map((block) => (
+            <div class="wx-mg-lane wx-mg-lane-temp" style={`--temp-rows:${tempLaneCount}`}>
+              <span class="wx-mg-name">Temporary</span>
+              <div class="wx-mg-track">
+                {temporaryBlocks.length ? (
+                  temporaryBlocks.map((block) => (
                     <span
-                      class={`wx-block wx-block-temp cat-${block.category.toLowerCase()}`}
-                      style={`left:${block.leftPct}%;width:${block.widthPct}%`}
-                      title={`${block.label} · ${block.summary}`}
+                      class={`wx-mg-temp cat-${block.category.toLowerCase()}`}
+                      style={`left:${block.leftPct}%;width:${block.widthPct}%;--row:${block.laneRow}`}
                     >
-                      <span class="wx-block-label num">{block.label}</span>
+                      <span class="wx-mg-block-label num">{block.period.probability != null ? `PROB${block.period.probability}` : block.period.kindLabel} {block.category === 'UNKNOWN' ? '' : block.category}</span>
                     </span>
                   ))
                 ) : (
-                  <span class="wx-timeline-empty">No temporary or probability groups</span>
+                  <span class="wx-mg-none">No temporary or probability groups</span>
                 )}
-                {nowPct != null && <span class="wx-now" style={`left:${nowPct}%`}></span>}
               </div>
+            </div>
+
+            <div class="wx-mg-lane">
+              <span class="wx-mg-name">Wind</span>
+              <div class="wx-mg-track">
+                {meteogramLanes.map((cell) => (
+                  <span class="wx-mg-cell" style={`left:${cell.leftPct}%;width:${cell.widthPct}%`}>
+                    {cell.wind.deg != null && (
+                      <svg class="wx-mg-arrow" viewBox="0 0 12 12" aria-hidden="true" style={`transform:rotate(${(cell.wind.deg + 180) % 360}deg)`}>
+                        <path d="M6 1 L10 10 L6 7.6 L2 10 Z" />
+                      </svg>
+                    )}
+                    <span class="num">{cell.wind.text}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div class="wx-mg-lane">
+              <span class="wx-mg-name">Visibility</span>
+              <div class="wx-mg-track">
+                {meteogramLanes.map((cell) => (
+                  <span class={`wx-mg-cell wx-mg-cell-cat cat-${cell.vis.category.toLowerCase()}`} style={`left:${cell.leftPct}%;width:${cell.widthPct}%`}>
+                    <span class="num">{cell.vis.text}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div class="wx-mg-lane">
+              <span class="wx-mg-name">Ceiling</span>
+              <div class="wx-mg-track">
+                {meteogramLanes.map((cell) => (
+                  <span class={`wx-mg-cell wx-mg-cell-cat cat-${cell.ceiling.category.toLowerCase()}`} style={`left:${cell.leftPct}%;width:${cell.widthPct}%`}>
+                    <span class="num">{cell.ceiling.text}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div class="wx-mg-overlay" aria-hidden="true">
+              {nowPct != null && <span class="wx-mg-now" style={`left:${nowPct}%`}><span class="wx-mg-now-label">Now</span></span>}
+              <span class="wx-mg-cursor" data-mg-cursor hidden></span>
             </div>
           </div>
 
-          <p class="wx-timeline-foot num">
+          <div class="wx-mg-readout" data-mg-readout aria-live="polite"></div>
+
+          <p class="wx-mg-foot num">
             Valid {pad2(timelineStart.getUTCDate())} {pad2(timelineStart.getUTCHours())}:00Z
-            to {pad2(timelineEnd.getUTCDate())} {pad2(timelineEnd.getUTCHours())}:00Z
-            · block colour is the flight category each period would produce
+            to {pad2(timelineEnd.getUTCDate())} {pad2(timelineEnd.getUTCHours())}:00Z.
+            Visibility and ceiling bars show the category each one gives on its own.
           </p>
         </div>
       ) : (
         <p class="wx-empty">This forecast has no usable validity period, so it cannot be laid on a timeline.</p>
       )}
 
-      <div class="wx-periods">
-        {taf.periods.map((period) => {
-          const cat = flightCategory(period);
-          return (
-            <article class="wx-period">
-              <header class="wx-period-head">
-                <span class={`wx-period-cat cat-${cat.toLowerCase()}`}>{cat}</span>
-                <span class="wx-period-kind">{period.kind === 'INITIAL' ? 'Initial conditions' : period.kindLabel}</span>
-                <span class="wx-period-time num">
-                  {period.from ? `${pad2(period.from.day)} ${pad2(period.from.hour)}:${pad2(period.from.minute)}Z` : '-'}
-                  {period.to ? ` → ${pad2(period.to.day)} ${pad2(period.to.hour)}:${pad2(period.to.minute)}Z` : ''}
-                </span>
-              </header>
-              <dl class="wx-period-body">
-                {period.wind && <div><dt>Wind</dt><dd>{period.wind.calm ? 'Calm' : `${period.wind.variable ? 'Variable' : `${pad2(period.wind.directionDeg ?? 0)}° (${compassPoint(period.wind.directionDeg ?? 0)})`} at ${period.wind.speedKt} kt${period.wind.gustKt ? `, gusting ${period.wind.gustKt}` : ''}`}</dd></div>}
-                {period.visibility && <div><dt>Visibility</dt><dd>{period.visibility.text}</dd></div>}
-                {period.weather.length > 0 && <div><dt>Weather</dt><dd>{period.weather.map((w) => w.text).join('; ')}</dd></div>}
-                {period.clouds.length > 0 && <div><dt>Cloud</dt><dd>{period.clouds.map((c: CloudLayer) => cloudText(c)).join('; ')}</dd></div>}
-                {period.windShear && <div><dt>Wind shear</dt><dd>{period.windShear.text}</dd></div>}
-                {period.probability != null && <div><dt>Probability</dt><dd>{period.probability}% chance of these conditions</dd></div>}
-              </dl>
-            </article>
-          );
-        })}
-      </div>
+      <details class="wx-taf-periods">
+        <summary>Every forecast period ({taf.periods.length})</summary>
+        <div class="wx-periods">
+          {taf.periods.map((period) => {
+            const cat = flightCategory(period);
+            return (
+              <article class="wx-period">
+                <header class="wx-period-head">
+                  <span class={`wx-period-cat cat-${cat.toLowerCase()}`}>{cat}</span>
+                  <span class="wx-period-kind">{period.kind === 'INITIAL' ? 'Initial conditions' : period.kindLabel}</span>
+                  <span class="wx-period-time num">
+                    {period.from ? `${pad2(period.from.day)} ${pad2(period.from.hour)}:${pad2(period.from.minute)}Z` : '-'}
+                    {period.to ? ` → ${pad2(period.to.day)} ${pad2(period.to.hour)}:${pad2(period.to.minute)}Z` : ''}
+                  </span>
+                </header>
+                <dl class="wx-period-body">
+                  {period.wind && <div><dt>Wind</dt><dd>{period.wind.calm ? 'Calm' : `${period.wind.variable ? 'Variable' : `${pad2(period.wind.directionDeg ?? 0)}° (${compassPoint(period.wind.directionDeg ?? 0)})`} at ${period.wind.speedKt} kt${period.wind.gustKt ? `, gusting ${period.wind.gustKt}` : ''}`}</dd></div>}
+                  {period.visibility && <div><dt>Visibility</dt><dd>{period.visibility.text}</dd></div>}
+                  {period.weather.length > 0 && <div><dt>Weather</dt><dd>{period.weather.map((w) => w.text).join('; ')}</dd></div>}
+                  {period.clouds.length > 0 && <div><dt>Cloud</dt><dd>{period.clouds.map((c: CloudLayer) => cloudText(c)).join('; ')}</dd></div>}
+                  {period.windShear && <div><dt>Wind shear</dt><dd>{period.windShear.text}</dd></div>}
+                  {period.probability != null && <div><dt>Probability</dt><dd>{period.probability}% chance of these conditions</dd></div>}
+                </dl>
+              </article>
+            );
+          })}
+        </div>
+      </details>
 
       <details class="wx-taf-raw">
         <summary>Forecast, group by group</summary>
@@ -860,7 +1028,7 @@ const faqItems = [
   ) : (
     <section class="wx-taf">
       <header class="wx-panel-head">
-        <span class="col">06 - Terminal aerodrome forecast</span>
+        <span class="col">Forecast (TAF)</span>
       </header>
       <p class="wx-empty">
         No TAF is available for this station. Forecasts are issued only for aerodromes with a
@@ -871,7 +1039,7 @@ const faqItems = [
 
   <section class="wx-notes">
     <header class="wx-panel-head">
-      <span class="col">07 - How to read this</span>
+      <span class="col">How to read this</span>
       <span class="wx-panel-note">Frequently asked</span>
     </header>
     <div class="wx-faq">
@@ -895,6 +1063,11 @@ const faqItems = [
     --cat-ifr: #B42318;
     --cat-lifr: #7B2D8E;
     --cat-unknown: var(--text-muted);
+    --band-vfr: #17663B;
+    --band-mvfr: #0B3F73;
+    --band-ifr: #A3261B;
+    --band-lifr: #6B2A7C;
+    --band-unknown: #3C4349;
     display: block;
     margin-top: 40px;
   }
@@ -912,89 +1085,133 @@ const faqItems = [
   .cat-lifr { --cat: var(--cat-lifr); }
   .cat-unknown { --cat: var(--cat-unknown); }
 
-  .wx-headline {
-    border-top: 1px solid var(--border-strong);
-    padding-top: 22px;
+  .wx-hl {
+    --band: var(--band-unknown);
+    --on-band: #FFFFFF;
+    --on-band-muted: rgba(255, 255, 255, 0.78);
+    --on-band-line: rgba(255, 255, 255, 0.3);
+    background: var(--band);
+    color: var(--on-band);
+    padding: 30px 32px 26px;
   }
 
-  .wx-headline-top {
+  .wx-hl.cat-vfr { --band: var(--band-vfr); }
+  .wx-hl.cat-mvfr { --band: var(--band-mvfr); }
+  .wx-hl.cat-ifr { --band: var(--band-ifr); }
+  .wx-hl.cat-lifr { --band: var(--band-lifr); }
+
+  .wx-hl-top {
     display: flex;
-    align-items: flex-start;
+    align-items: flex-end;
     justify-content: space-between;
-    gap: 32px;
+    gap: 24px 40px;
     flex-wrap: wrap;
   }
 
   .wx-station {
     font-family: var(--font-archivo);
-    font-size: clamp(38px, 6vw, 58px);
+    font-size: clamp(56px, 10vw, 112px);
     font-weight: 700;
-    letter-spacing: -0.02em;
-    line-height: 1;
+    letter-spacing: -0.035em;
+    line-height: 0.88;
     margin: 0;
   }
 
   .wx-station-name {
-    margin: 8px 0 0;
+    margin: 14px 0 0;
     font-size: 15px;
-    color: var(--text-muted);
+    color: var(--on-band-muted);
     max-width: 46ch;
   }
 
-  .wx-elev { color: var(--text-subtle); }
+  .wx-elev { color: var(--on-band-muted); }
 
   .wx-obs {
-    margin: 10px 0 0;
+    margin: 6px 0 0;
     font-size: 12.5px;
-    color: var(--text-muted);
+    color: var(--on-band-muted);
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
   }
 
-  .wx-age { color: var(--fg); }
+  .wx-age { color: var(--on-band); font-weight: 600; }
+  .wx-age.is-stale { background: var(--on-band); color: var(--band); padding: 0 6px; }
 
   .wx-flagchip {
     font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.1em;
     padding: 2px 6px;
-    border: 1px solid var(--border);
-    color: var(--text-muted);
+    border: 1px solid var(--on-band-line);
+    color: var(--on-band);
   }
 
   .wx-category {
-    border: 1px solid var(--cat);
-    border-left-width: 4px;
-    padding: 14px 18px;
-    max-width: 340px;
-    min-width: 240px;
+    text-align: right;
+    max-width: 32ch;
   }
 
   .wx-category-code {
     display: block;
     font-family: var(--font-archivo);
-    font-size: 28px;
+    font-size: clamp(40px, 6vw, 72px);
     font-weight: 700;
-    letter-spacing: 0.02em;
-    color: var(--cat);
-    line-height: 1;
+    letter-spacing: -0.02em;
+    line-height: 0.9;
   }
 
   .wx-category-meaning {
     display: block;
-    margin-top: 6px;
+    margin-top: 10px;
     font-size: 12.5px;
-    color: var(--text-muted);
+    color: var(--on-band-muted);
     line-height: 1.45;
   }
+
+  .wx-hl-raw {
+    margin-top: 26px;
+    border-top: 1px solid var(--on-band-line);
+    padding-top: 18px;
+  }
+
+  .wx-strip.wx-hl-strip {
+    background: rgba(0, 0, 0, 0.16);
+    border: none;
+    margin: 0;
+    padding: 12px 14px;
+    font-size: 15px;
+  }
+
+  .wx-hl-readout {
+    margin: 12px 0 0;
+    min-height: 22px;
+    font-size: 14px;
+    line-height: 1.5;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 12px;
+  }
+
+  .wx-hl-readout-hint { color: var(--on-band-muted); }
+
+  .wx-hl-readout :global(code) {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    padding: 1px 7px;
+    background: var(--on-band);
+    color: var(--band);
+    font-weight: 600;
+  }
+
+  .wx-hl-readout :global(.wx-hl-readout-label) { color: var(--on-band-muted); font-size: 12.5px; }
 
   .wx-stat-band {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    border-top: 1px solid var(--border);
-    margin-top: 26px;
+    border-bottom: 1px solid var(--border);
   }
 
   .wx-stat {
@@ -1313,6 +1530,14 @@ const faqItems = [
     font-size: 12.5px;
   }
   .wx-facts dt { color: var(--text-muted); }
+
+  .wx-derived {
+    font-size: 10.5px;
+    color: var(--text-subtle);
+    border: 1px solid var(--border);
+    padding: 0 5px;
+    margin-left: 4px;
+  }
   .wx-facts dd { margin: 0; text-align: right; }
 
   .wx-visibility { margin-top: 48px; }
@@ -1326,7 +1551,30 @@ const faqItems = [
     border: 1px solid var(--border);
   }
 
-  .wx-vis-seg { display: block; background: var(--cat); opacity: 0.28; border-right: 1px solid var(--bg); }
+  .wx-vis-seg { display: block; background: var(--cat); opacity: 0.22; border-right: 1px solid var(--bg); }
+  .wx-vis-seg.is-active { opacity: 0.7; }
+
+  .wx-vis-zones {
+    position: relative;
+    height: 18px;
+    margin-bottom: 6px;
+  }
+
+  .wx-vis-zone {
+    position: absolute;
+    top: 0;
+    font-family: var(--font-archivo);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--cat);
+    opacity: 0.55;
+    text-align: center;
+    border-left: 1px solid var(--border);
+  }
+
+  .wx-vis-zone:first-child { border-left: none; }
+  .wx-vis-zone.is-active { opacity: 1; }
   .wx-vis-seg:last-child { border-right: none; }
 
   .wx-vis-marker {
@@ -1338,16 +1586,12 @@ const faqItems = [
     transform: translateX(-1px);
   }
 
-  .wx-vis-marker-label {
-    position: absolute;
-    left: 50%;
-    bottom: calc(100% + 4px);
-    transform: translateX(-50%);
-    white-space: nowrap;
-    font-size: 11px;
+  .wx-vis-zone-value {
+    font-family: var(--font-sans);
     font-weight: 600;
-    background: var(--bg);
-    padding: 0 4px;
+    color: var(--fg);
+    margin-left: 6px;
+    letter-spacing: 0;
   }
 
   .wx-vis-ticks {
@@ -1359,6 +1603,8 @@ const faqItems = [
   }
 
   .wx-vis-ticks span { position: absolute; transform: translateX(-50%); }
+  .wx-vis-ticks span:first-child { transform: none; }
+  .wx-vis-ticks span:last-child { transform: translateX(-100%); }
 
   .wx-vis-detail {
     display: grid;
@@ -1384,7 +1630,25 @@ const faqItems = [
   }
   .wx-wx-list p { margin-top: 10px; }
 
-  .wx-raw { margin-top: 48px; }
+  .wx-raw { margin-top: 28px; }
+
+  .wx-raw > summary,
+  .wx-taf-periods > summary {
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-muted);
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .wx-raw > summary:hover,
+  .wx-taf-periods > summary:hover { color: var(--fg); }
+
+  .wx-raw[open] > summary,
+  .wx-taf-periods[open] > summary { border-bottom: none; }
+
+  .wx-taf-periods { margin-top: 28px; }
 
   .wx-strip {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -1437,6 +1701,24 @@ const faqItems = [
   .wx-decode li[data-kind='period'], .wx-decode li[data-kind='valid'] { --tok-color: var(--accent-sky); }
   .wx-tok[data-kind='unknown'], .wx-decode li[data-kind='unknown'] { --tok-color: var(--warning); }
 
+  .wx-hl .wx-tok {
+    background: transparent;
+    color: var(--on-band);
+    border-color: var(--on-band-line);
+    border-bottom-color: var(--on-band-line);
+  }
+
+  .wx-hl .wx-tok:hover,
+  .wx-hl .wx-tok:focus-visible,
+  .wx-hl .wx-tok.is-active,
+  .wx-hl .wx-tok.is-selected {
+    background: var(--on-band);
+    border-color: var(--on-band);
+    color: var(--band);
+  }
+
+  .wx-hl .wx-tok:focus-visible { outline: 2px solid var(--on-band); outline-offset: 2px; }
+
   .wx-decode { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
 
   .wx-decode li {
@@ -1484,121 +1766,239 @@ const faqItems = [
 
   .wx-taf { margin-top: 48px; }
 
-  .wx-timeline { margin-bottom: 30px; }
-
-  .wx-timeline-ruler {
+  .wx-mg {
+    --mg-name: 92px;
+    --mg-lane: 34px;
     position: relative;
-    height: 16px;
-    margin-left: 96px;
-    font-size: 10px;
+    outline: none;
+  }
+
+  .wx-mg:focus-visible .wx-mg-body { box-shadow: 0 0 0 2px var(--accent-blue); }
+
+  .wx-mg-ruler {
+    position: relative;
+    height: 18px;
+    margin-left: var(--mg-name);
+    font-size: 10.5px;
     color: var(--text-muted);
   }
 
-  .wx-timeline-ruler span { position: absolute; transform: translateX(-50%); }
-  .wx-timeline-ruler span.major { color: var(--fg); font-weight: 600; }
+  .wx-mg-ruler span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+  .wx-mg-ruler span:first-child { transform: none; }
+  .wx-mg-ruler span:last-child { transform: translateX(-100%); }
+  .wx-mg-ruler span.major { color: var(--fg); font-weight: 600; }
 
-  .wx-timeline-rows { border: 1px solid var(--border); }
-
-  .wx-timeline-row {
-    display: flex;
-    align-items: stretch;
-    border-bottom: 1px solid var(--border);
+  .wx-mg-body {
+    position: relative;
+    border: 1px solid var(--border);
+    background: var(--surface-card);
+    cursor: crosshair;
+    touch-action: pan-y;
   }
 
-  .wx-timeline-row:last-child { border-bottom: none; }
+  .wx-mg-lane {
+    display: flex;
+    min-height: var(--mg-lane);
+  }
 
-  .wx-timeline-rowlabel {
-    width: 96px;
+  .wx-mg-lane + .wx-mg-lane { border-top: 1px solid var(--border); }
+
+  .wx-mg-name {
+    width: var(--mg-name);
     flex: none;
-    padding: 14px 12px;
-    border-right: 1px solid var(--border);
+    padding: 0 12px;
     display: flex;
     align-items: center;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    border-right: 1px solid var(--border);
   }
 
-  .wx-timeline-track {
+  .wx-mg-track {
     position: relative;
     flex: 1;
-    min-height: 46px;
-    background: repeating-linear-gradient(
-      to right,
-      transparent,
-      transparent calc(12.5% - 1px),
-      var(--border) calc(12.5% - 1px),
-      var(--border) 12.5%
-    );
+    min-width: 0;
   }
 
-  .wx-block {
-    position: absolute;
-    top: 8px;
-    bottom: 8px;
-    background: var(--cat);
-    opacity: 0.82;
-    border-left: 1px solid var(--bg);
-    display: flex;
-    align-items: center;
-    overflow: hidden;
-  }
+  .wx-mg-lane-cat { min-height: 58px; }
 
-  .wx-block-temp {
-    top: 12px;
-    bottom: 12px;
-    opacity: 0.55;
-    background: repeating-linear-gradient(45deg, var(--cat), var(--cat) 4px, transparent 4px, transparent 8px);
-    border: 1px solid var(--cat);
-  }
-
-  .wx-block-label {
-    font-size: 9.5px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    color: var(--bg);
-    padding: 0 6px;
-    white-space: nowrap;
-  }
-
-  .wx-block-temp .wx-block-label { color: var(--fg); }
-
-  .wx-now {
+  .wx-mg-block {
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 2px;
-    background: var(--fg);
-    z-index: 2;
-  }
-
-  .wx-now-label {
-    position: absolute;
-    top: 2px;
-    left: 4px;
-    background: var(--bg);
-    padding: 1px 4px;
-    border: 1px solid var(--border-strong);
+    background: var(--cat);
+    border-right: 2px solid var(--surface-card);
+    color: var(--bg);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 0 8px;
+    overflow: hidden;
     white-space: nowrap;
   }
 
-  .wx-timeline-empty {
+  .wx-mg-block-cat {
+    font-family: var(--font-archivo);
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .wx-mg-block-label { font-size: 10px; opacity: 0.85; margin-top: 3px; }
+
+  .wx-mg-lane-temp { min-height: calc(var(--temp-rows) * 24px + 10px); }
+
+  .wx-mg-temp {
+    position: absolute;
+    top: calc(5px + var(--row) * 24px);
+    height: 20px;
+    background: color-mix(in srgb, var(--cat) 18%, transparent);
+    border: 1px solid var(--cat);
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .wx-mg-temp .wx-mg-block-label {
+    margin: 0;
+    padding: 0 6px;
+    color: var(--fg);
+    opacity: 1;
+    font-weight: 600;
+  }
+
+  .wx-mg-none {
     position: absolute;
     left: 12px;
     top: 50%;
     transform: translateY(-50%);
     font-size: 11.5px;
     color: var(--text-subtle);
+    white-space: nowrap;
   }
 
-  .wx-timeline-foot { margin: 10px 0 0; font-size: 11px; color: var(--text-subtle); }
+  .wx-mg-cell {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
+    font-size: 11.5px;
+    border-left: 1px solid var(--border);
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .wx-mg-cell:first-child { border-left: none; }
+
+  .wx-mg-cell-cat { box-shadow: inset 0 3px 0 var(--cat); }
+  .wx-mg-cell-cat.cat-unknown { box-shadow: none; color: var(--text-subtle); }
+
+  .wx-mg-arrow {
+    width: 12px;
+    height: 12px;
+    flex: none;
+    fill: var(--accent-blue);
+  }
+
+  .wx-mg-overlay {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: var(--mg-name);
+    right: 0;
+    pointer-events: none;
+  }
+
+  .wx-mg-now,
+  .wx-mg-cursor {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--fg);
+  }
+
+  .wx-mg-now { opacity: 0.35; }
+
+  .wx-mg-now-label {
+    position: absolute;
+    top: calc(100% + 3px);
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--bg);
+    background: var(--fg);
+    padding: 0 5px;
+  }
+
+  .wx-mg-cursor { background: var(--accent-blue); }
+
+  .wx-mg-readout {
+    margin-top: 24px;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--cat, var(--border));
+    background: var(--surface-card);
+    padding: 14px 16px;
+    min-height: 96px;
+  }
+
+  .wx-mg-readout :global(.wx-mg-readout-time) {
+    font-family: var(--font-archivo);
+    font-size: 17px;
+    font-weight: 700;
+  }
+
+  .wx-mg-readout :global(.wx-mg-readout-rel) { font-size: 12px; color: var(--text-muted); margin-left: 8px; }
+
+  .wx-mg-readout :global(.wx-mg-readout-line) {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    margin-top: 8px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .wx-mg-readout :global(.wx-period-cat) {
+    flex: none;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--bg);
+    background: var(--cat);
+    padding: 3px 7px;
+  }
+
+  .wx-mg-readout :global(.cat-vfr) { --cat: var(--cat-vfr); }
+  .wx-mg-readout :global(.cat-mvfr) { --cat: var(--cat-mvfr); }
+  .wx-mg-readout :global(.cat-ifr) { --cat: var(--cat-ifr); }
+  .wx-mg-readout :global(.cat-lifr) { --cat: var(--cat-lifr); }
+  .wx-mg-readout :global(.cat-unknown) { --cat: var(--cat-unknown); }
+
+  .wx-mg-readout :global(.wx-empty) { margin: 8px 0 0; font-size: 12.5px; color: var(--text-muted); }
+  .wx-mg-readout :global(.wx-mg-readout-kind) { color: var(--text-muted); flex: none; min-width: 84px; }
+
+  .wx-mg-foot { margin: 10px 0 0; font-size: 11px; color: var(--text-subtle); }
 
   .wx-periods {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
-    gap: 1px;
-    background: var(--border);
-    border: 1px solid var(--border);
+    border-top: 1px solid var(--border);
+    border-left: 1px solid var(--border);
   }
 
-  .wx-period { background: var(--surface-card); padding: 16px 18px; }
+  .wx-period {
+    background: var(--surface-card);
+    padding: 16px 18px;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
 
   .wx-period-head {
     display: flex;
@@ -1717,30 +2117,40 @@ const faqItems = [
     .wx-instruments { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .wx-stat-band { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .wx-stat { border-bottom: 1px solid var(--border); }
+    .wx-stat:nth-child(3n) { border-right: none; }
+    .wx-stat:nth-child(3n + 1) { padding-left: 0; }
   }
 
   @media (max-width: 720px) {
+    .wx-hl { padding: 22px 18px 20px; }
+    .wx-hl-top { align-items: flex-start; }
+    .wx-category { text-align: left; max-width: none; }
     .wx-instruments { grid-template-columns: minmax(0, 1fr); }
     .wx-stat-band { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .wx-stat { padding: 14px 14px 16px; border-right: 1px solid var(--border); }
+    .wx-stat:nth-child(3n) { border-right: 1px solid var(--border); }
+    .wx-stat:nth-child(3n + 1) { padding-left: 14px; }
+    .wx-stat:nth-child(2n) { border-right: none; }
+    .wx-stat:nth-child(2n + 1) { padding-left: 0; }
     .wx-decode li { grid-template-columns: minmax(0, 1fr); gap: 4px; }
     .wx-dec-label { order: -1; }
-    .wx-timeline-ruler { margin-left: 0; }
-    .wx-timeline-rowlabel { width: 74px; padding: 10px 8px; }
-    .wx-category { max-width: none; width: 100%; }
     .wx-vis-detail { grid-template-columns: minmax(0, 1fr); }
     .wx-periods { grid-template-columns: minmax(0, 1fr); }
+    .wx-mg { --mg-name: 72px; }
+    .wx-mg-name { padding: 0 8px; font-size: 10.5px; }
+    .wx-mg-cell { font-size: 10.5px; padding: 0 5px; gap: 4px; }
+    .wx-mg-block { padding: 0 5px; }
+    .wx-mg-block-label { display: none; }
+    .wx-mg-temp .wx-mg-block-label { display: block; font-size: 9.5px; padding: 0 4px; }
   }
 
   @media (max-width: 480px) {
     .wx-panel { padding: 16px 14px 20px; }
-    .wx-stat-band { grid-template-columns: minmax(0, 1fr); }
-    .wx-stat { border-right: none; border-bottom: 1px solid var(--border); padding: 14px 0; }
-    .wx-stat:first-child { padding-top: 0; }
-    .wx-stat:last-child { border-bottom: none; }
-    .wx-category { min-width: 0; }
-    .wx-runway-picker { flex-wrap: wrap; }
-    .wx-runway-readout { flex-basis: 100%; order: -1; }
-    .wx-timeline-rowlabel { width: 58px; font-size: 9px; padding: 10px 6px; }
+    .wx-strip.wx-hl-strip { font-size: 13.5px; padding: 10px; }
+    .wx-runway-picker { display: grid; grid-template-columns: 44px 44px minmax(0, 1fr); }
+    .wx-runway-readout { grid-column: 1 / -1; }
+    .wx-step, .wx-into-wind { min-height: 40px; }
+    .wx-mg-ruler span:nth-child(2n) { display: none; }
     .wx-decode li { padding: 10px 4px; }
     .wx-strip { padding: 12px; line-height: 2.2; }
   }
@@ -1771,7 +2181,7 @@ const faqItems = [
               ? `${minutes} min ago`
               : `${Math.floor(minutes / 60)} h ${minutes % 60} min ago`;
         ageEl.textContent = `· ${text}${stale ? ' · older than the hourly cycle' : ''}`;
-        ageEl.style.color = stale ? 'var(--warning)' : '';
+        ageEl.classList.toggle('is-stale', stale);
         ageEl.title = observed.toLocaleString();
       };
       tick();
@@ -1872,16 +2282,52 @@ const faqItems = [
       root.classList.toggle('has-selection', selectedId !== null);
     };
 
+    const readout = root.querySelector<HTMLElement>('[data-wx-readout]');
+    const readoutHint = readout?.innerHTML ?? '';
+
+    const showReadout = (token: HTMLElement | null) => {
+      if (!readout) return;
+      if (!token) {
+        readout.innerHTML = readoutHint;
+        return;
+      }
+      const code = document.createElement('code');
+      code.textContent = token.textContent ?? '';
+      const label = document.createElement('span');
+      label.className = 'wx-hl-readout-label';
+      label.textContent = token.dataset.label ?? '';
+      const plain = document.createElement('span');
+      plain.textContent = token.dataset.plain ?? '';
+      readout.replaceChildren(code, label, plain);
+    };
+
+    const headerToken = (id: string | null) =>
+      id ? root.querySelector<HTMLElement>(`.wx-hl .wx-tok[data-tok="${id}"]`) : null;
+
+    const restoreReadout = () => showReadout(headerToken(selectedId));
+
     root.querySelectorAll<HTMLButtonElement>('.wx-tok').forEach((token) => {
       const id = token.dataset.tok ?? null;
-      token.addEventListener('mouseenter', () => setActive(id, true));
-      token.addEventListener('mouseleave', () => setActive(id, false));
-      token.addEventListener('focus', () => setActive(id, true));
-      token.addEventListener('blur', () => setActive(id, false));
+      const inHeader = !!token.closest('.wx-hl');
+      const enter = () => {
+        setActive(id, true);
+        if (inHeader) showReadout(token);
+      };
+      const leave = () => {
+        setActive(id, false);
+        if (inHeader) restoreReadout();
+      };
+      token.addEventListener('mouseenter', enter);
+      token.addEventListener('mouseleave', leave);
+      token.addEventListener('focus', enter);
+      token.addEventListener('blur', leave);
       token.addEventListener('click', () => {
-        const row = root.querySelector(`.wx-decode li[data-dec="${id}"]`);
-        row?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (!inHeader) {
+          const row = root.querySelector(`.wx-decode li[data-dec="${id}"]`);
+          row?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
         select(id);
+        if (inHeader) restoreReadout();
       });
     });
 
@@ -1896,6 +2342,7 @@ const faqItems = [
         const token = root.querySelector<HTMLElement>(`.wx-tok[data-tok="${id}"]`);
         token?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         select(id);
+        restoreReadout();
       };
       row.addEventListener('click', activate);
       row.addEventListener('keydown', (event) => {
@@ -1907,6 +2354,145 @@ const faqItems = [
     });
   }
 
-  setupMetarDecoder();
-  document.addEventListener('astro:after-swap', setupMetarDecoder);
+  interface MeteogramBlock {
+    from: number;
+    to: number;
+    row: 'prevailing' | 'amendment';
+    category: string;
+    label: string;
+    probability: number | null;
+    summary: string;
+  }
+
+  interface MeteogramData {
+    start: number;
+    end: number;
+    now: number | null;
+    blocks: MeteogramBlock[];
+  }
+
+  const HOUR = 3600000;
+
+  function two(n: number): string {
+    return String(n).padStart(2, '0');
+  }
+
+  function setupMeteogram(root: HTMLElement) {
+    const mg = root.querySelector<HTMLElement>('[data-wx-mg]');
+    if (!mg) return;
+    let data: MeteogramData;
+    try {
+      data = JSON.parse(mg.dataset.wxMg ?? '');
+    } catch {
+      return;
+    }
+
+    const body = mg.querySelector<HTMLElement>('.wx-mg-body');
+    const overlay = mg.querySelector<HTMLElement>('.wx-mg-overlay');
+    const cursor = mg.querySelector<HTMLElement>('[data-mg-cursor]');
+    const readout = mg.querySelector<HTMLElement>('[data-mg-readout]');
+    if (!body || !overlay || !cursor || !readout) return;
+
+    const span = data.end - data.start;
+    const home = data.now ?? data.start;
+    let current = home;
+
+    const categoryChip = (category: string) => {
+      const chip = document.createElement('span');
+      chip.className = `wx-period-cat cat-${category.toLowerCase()}`;
+      chip.textContent = category === 'UNKNOWN' ? '?' : category;
+      return chip;
+    };
+
+    const line = (category: string, kind: string, text: string) => {
+      const row = document.createElement('div');
+      row.className = 'wx-mg-readout-line';
+      const kindEl = document.createElement('span');
+      kindEl.className = 'wx-mg-readout-kind';
+      kindEl.textContent = kind;
+      const textEl = document.createElement('span');
+      textEl.textContent = text;
+      row.append(categoryChip(category), kindEl, textEl);
+      return row;
+    };
+
+    const render = (t: number, showCursor: boolean) => {
+      current = Math.max(data.start, Math.min(data.end, t));
+      const pct = ((current - data.start) / span) * 100;
+      cursor.hidden = !showCursor;
+      cursor.style.left = `${pct}%`;
+
+      const active = data.blocks.filter((b) => current >= b.from && current < b.to);
+      const prevailing = active.filter((b) => b.row === 'prevailing').pop();
+      const temporary = active.filter((b) => b.row === 'amendment');
+
+      const at = new Date(current);
+      const head = document.createElement('div');
+      const time = document.createElement('span');
+      time.className = 'wx-mg-readout-time num';
+      time.textContent = `${two(at.getUTCDate())} ${two(at.getUTCHours())}:${two(at.getUTCMinutes())}Z`;
+      const rel = document.createElement('span');
+      rel.className = 'wx-mg-readout-rel';
+      if (data.now != null) {
+        const hours = Math.round((current - data.now) / HOUR);
+        rel.textContent = hours === 0 ? 'now' : hours > 0 ? `in ${hours} h` : `${-hours} h ago`;
+      }
+      head.append(time, rel);
+
+      const lines: HTMLElement[] = [];
+      if (prevailing) lines.push(line(prevailing.category, 'Expected', prevailing.summary));
+      for (const block of temporary) {
+        const kind = block.probability != null ? `${block.probability}% chance` : block.label;
+        lines.push(line(block.category, kind, block.summary));
+      }
+      if (!lines.length) {
+        const empty = document.createElement('p');
+        empty.className = 'wx-empty';
+        empty.textContent = 'No forecast group covers this time.';
+        lines.push(empty);
+      }
+
+      readout.className = `wx-mg-readout cat-${(prevailing?.category ?? 'unknown').toLowerCase()}`;
+      readout.replaceChildren(head, ...lines);
+    };
+
+    const fromPointer = (event: PointerEvent) => {
+      const rect = overlay.getBoundingClientRect();
+      const x = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+      return data.start + (x / rect.width) * span;
+    };
+
+    body.addEventListener('pointermove', (event) => render(fromPointer(event), true));
+    body.addEventListener('pointerdown', (event) => render(fromPointer(event), true));
+    body.addEventListener('pointerleave', (event) => {
+      if (event.pointerType === 'mouse') render(home, false);
+    });
+
+    mg.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+        event.preventDefault();
+        const step = event.key === 'ArrowRight' ? HOUR : -HOUR;
+        render(Math.round((current + step) / HOUR) * HOUR, true);
+      } else if (event.key === 'Home') {
+        event.preventDefault();
+        render(data.start, true);
+      } else if (event.key === 'End') {
+        event.preventDefault();
+        render(data.end - 1, true);
+      } else if (event.key === 'Escape') {
+        render(home, false);
+      }
+    });
+
+    render(home, false);
+  }
+
+  function setupAll() {
+    setupMetarDecoder();
+    const root = document.querySelector<HTMLElement>('.wx');
+    if (root) setupMeteogram(root);
+  }
+
+  setupAll();
+  document.addEventListener('astro:after-swap', setupAll);
 </script>
