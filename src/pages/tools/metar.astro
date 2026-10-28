@@ -947,31 +947,44 @@ const pageTitle = report?.station
     const legend = figure?.querySelector<HTMLElement>('[data-wx-map-legend]');
     if (!figure || !container || !legend) return;
 
-    let stations: MapStation[];
-    try {
-      const response = await fetch('/data/categories.json');
-      if (!response.ok) return;
-      stations = (await response.json()).stations as MapStation[];
-    } catch {
-      return;
-    }
-    if (!stations.length) return;
+    const load = async (): Promise<{ stations: MapStation[]; generated: string } | null> => {
+      try {
+        const response = await fetch('/data/categories.json', { cache: 'no-cache' });
+        if (!response.ok) return null;
+        const data = await response.json();
+        return { stations: data.stations as MapStation[], generated: data.generated as string };
+      } catch {
+        return null;
+      }
+    };
+
+    const first = await load();
+    if (!first || !first.stations.length) return;
+    let stations = first.stations;
+    let generated = first.generated;
+
+    const zulu = (iso: string) => {
+      const d = new Date(iso);
+      return Number.isNaN(d.getTime()) ? '' : `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}Z`;
+    };
 
     const describe = (s: MapStation) =>
       [
         s[3],
         s[4] != null ? `${fractionText(s[4])}${s[5] ? '+' : ''} sm` : null,
         s[6] != null ? `ceiling ${s[6].toLocaleString('en-US')} ft` : 'no ceiling',
+        s[7] ? `observed ${zulu(s[7])}` : null,
       ].filter(Boolean).join(', ');
 
-    const geojson = {
+    const toGeojson = (list: MapStation[]) => ({
       type: 'FeatureCollection' as const,
-      features: stations.map((s) => ({
+      features: list.map((s) => ({
         type: 'Feature' as const,
         geometry: { type: 'Point' as const, coordinates: [s[2], s[1]] },
         properties: { icao: s[0], category: s[3], rank: MAP_ORDER.indexOf(s[3]), detail: describe(s) },
       })),
-    };
+    });
+    let geojson = toGeojson(stations);
 
     figure.hidden = false;
     const { createMap, cssColor } = await import('../../lib/map-client');
@@ -979,7 +992,7 @@ const pageTitle = report?.station
     try {
       created = await createMap(container, { bounds: [[-168, 15], [-52, 70]] }, (map) => {
         if (map.getSource('stations')) return;
-        map.addSource('stations', { type: 'geojson', data: geojson });
+        map.addSource('stations', { type: 'geojson', data: toGeojson(stations) });
         map.addLayer({
           id: 'stations',
           type: 'circle',
@@ -1026,21 +1039,40 @@ const pageTitle = report?.station
       if (icao) window.location.href = `/tools/metar?station=${encodeURIComponent(icao)}`;
     });
 
-    const counts = MAP_ORDER.map((category) => [category, stations.filter((s) => s[3] === category).length] as const);
-    legend.replaceChildren(
-      ...counts.map(([category, count]) => {
-        const item = document.createElement('span');
-        const dot = document.createElement('i');
-        dot.style.setProperty('--dot', `var(--map-${category.toLowerCase()})`);
-        item.append(dot, `${category} ${count.toLocaleString('en-US')}`);
-        return item;
-      }),
-      Object.assign(document.createElement('span'), { className: 'wx-map-total', textContent: `${stations.length.toLocaleString('en-US')} stations worldwide` }),
-    );
-    container.setAttribute(
-      'aria-label',
-      `Map of ${stations.length.toLocaleString('en-US')} reporting stations: ${counts.map(([c, n]) => `${n} ${c}`).join(', ')}. The airport lists below show the same information.`,
-    );
+    const paintLegend = () => {
+      const counts = MAP_ORDER.map((category) => [category, stations.filter((s) => s[3] === category).length] as const);
+      const minutes = Math.max(0, Math.round((Date.now() - new Date(generated).getTime()) / 60000));
+      legend.replaceChildren(
+        ...counts.map(([category, count]) => {
+          const item = document.createElement('span');
+          const dot = document.createElement('i');
+          dot.style.setProperty('--dot', `var(--map-${category.toLowerCase()})`);
+          item.append(dot, `${category} ${count.toLocaleString('en-US')}`);
+          return item;
+        }),
+        Object.assign(document.createElement('span'), {
+          className: 'wx-map-total',
+          textContent: `${stations.length.toLocaleString('en-US')} stations, updated ${minutes < 1 ? 'just now' : `${minutes} min ago`}`,
+        }),
+      );
+      container.setAttribute(
+        'aria-label',
+        `Map of ${stations.length.toLocaleString('en-US')} reporting stations: ${counts.map(([c, n]) => `${n} ${c}`).join(', ')}. The airport lists below show the same information.`,
+      );
+    };
+    paintLegend();
+
+    window.setInterval(async () => {
+      const next = await load();
+      if (next && next.stations.length && next.generated !== generated) {
+        stations = next.stations;
+        generated = next.generated;
+        geojson = toGeojson(stations);
+        const source = map.getSource('stations') as { setData?: (data: unknown) => void } | undefined;
+        source?.setData?.(geojson);
+      }
+      paintLegend();
+    }, 5 * 60 * 1000);
   }
 
   setupWxConsole();

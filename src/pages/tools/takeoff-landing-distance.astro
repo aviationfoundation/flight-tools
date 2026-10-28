@@ -2,6 +2,7 @@
 export const prerender = false;
 
 import Layout from '../../layouts/Layout.astro';
+import { chartRows } from '../../lib/distance-chart';
 import { computeDistance, SURFACE_LABELS, type Surface, type DistanceResult } from '../../lib/takeoff-landing';
 
 const params = Astro.url.searchParams;
@@ -68,11 +69,9 @@ const rollLabel = phase === 'takeoff' ? 'ground roll' : 'landing roll';
       <div class="eyebrow">Flight planning tool</div>
       <h1 class="serif page-title">Takeoff &amp; Landing Distance</h1>
       <p class="page-lead">
-        No chart is built in - every POH's numbers belong to that airframe. Enter the baseline your
-        own chart already gives you at sea level and standard conditions, and this walks it through
-        the correction chain a POH's notes describe in words: weight, density altitude, wind,
-        surface, slope. Each step shows its multiplier, so the total is something you can retrace by
-        hand, not a number that arrived from nowhere.
+        Enter the distance your POH gives at sea level on a standard day. This corrects it for
+        weight, density altitude, wind, surface and slope one step at a time, so you can check
+        every number by hand.
       </p>
     </header>
 
@@ -169,15 +168,31 @@ const rollLabel = phase === 'takeoff' ? 'ground roll' : 'landing roll';
             more for anything short, contaminated, or unfamiliar.
           </p>
         </div>
-        <p class="tld-empty" data-tld-empty hidden={!!result}>Fill in your POH baseline, actual weight, and today's conditions to see the corrected distance.</p>
+        <div class="tld-empty" data-tld-empty hidden={!!result}>
+          <p>Fill in your POH baseline, your weight and today's conditions to see the corrected distance.</p>
+          <a href="/tools/takeoff-landing-distance?phase=takeoff&bd=1200&bo=2100&bw=2400&aw=2300&pa=5000&oat=25&wind=8&slope=1&surface=grass-dry" class="tld-example">Fill in example numbers</a>
+          <p class="tld-example-note">The example uses made-up figures, not any real aircraft's chart.</p>
+        </div>
       </aside>
     </section>
 
     <section class="tld-derivation" data-tld-derivation hidden={!result}>
       <header class="tld-panel-head">
         <span class="col">Derivation, step by step</span>
-        <span class="tld-panel-note">Each row multiplies the running distance from the row above</span>
+        <span class="tld-panel-note">Each step multiplies the distance above it</span>
       </header>
+      <ol class="tld-chart" data-tld-chart aria-label="Running distance after each correction">
+        {(result ? chartRows(result.steps) : []).map((row) => (
+          <li class={`tld-chart-row is-${row.direction}`}>
+            <span class="tld-chart-label">{row.label}</span>
+            <span class="tld-chart-track">
+              <span class="tld-chart-base" style={`width:${row.basePct}%`}></span>
+              <span class="tld-chart-delta" style={`left:${row.deltaLeftPct}%;width:${row.deltaPct}%`}></span>
+            </span>
+            <span class="tld-chart-value num">{Math.round(row.runningFt).toLocaleString('en-US')} ft</span>
+          </li>
+        ))}
+      </ol>
       <div class="table-scroll">
         <table class="tld-table" data-tld-table>
           <thead><tr><th>Step</th><th class="num">Factor</th><th class="num">Running distance</th><th>Why</th></tr></thead>
@@ -275,10 +290,25 @@ const rollLabel = phase === 'takeoff' ? 'ground roll' : 'landing roll';
   @media (max-width: 520px) {
     .tld-grid { grid-template-columns: minmax(0, 1fr); }
   }
+  .tld-chart { list-style: none; margin: 0 0 22px; padding: 0; display: grid; gap: 8px; }
+  .tld-chart-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 84px; align-items: center; gap: 14px; }
+  .tld-chart-label { font-size: 13px; }
+  .tld-chart-track { position: relative; height: 22px; background: var(--surface-subtle); }
+  .tld-chart-base { position: absolute; top: 0; bottom: 0; left: 0; background: var(--fg); opacity: 0.78; }
+  .tld-chart-delta { position: absolute; top: 0; bottom: 0; }
+  .tld-chart-row.is-up .tld-chart-delta { background: var(--danger); }
+  .tld-chart-row.is-down .tld-chart-delta { background: var(--success); opacity: 0.85; }
+  .tld-chart-row:last-child .tld-chart-base { background: var(--accent-blue); opacity: 1; }
+  .tld-chart-value { font-size: 13px; text-align: right; }
+  .tld-chart-row:last-child .tld-chart-value { font-weight: 700; }
+  .tld-example { display: inline-block; margin-top: 10px; font-size: 13px; font-weight: 600; color: var(--accent-blue); }
+  .tld-example-note { margin: 6px 0 0; font-size: 11.5px; color: var(--text-subtle); }
+  @media (max-width: 560px) { .tld-chart-row { grid-template-columns: 96px minmax(0, 1fr) 68px; gap: 8px; } .tld-chart-label { font-size: 12px; } }
 </style>
 
 <script>
   import { computeDistance, type Surface } from '../../lib/takeoff-landing';
+  import { chartRows } from '../../lib/distance-chart';
 
   function setup() {
     const form = document.getElementById('tld-form') as HTMLFormElement | null;
@@ -361,6 +391,27 @@ const rollLabel = phase === 'takeoff' ? 'ground roll' : 'landing roll';
           tr.innerHTML = `<td>${step.label}</td><td class="num">×${step.factor.toFixed(3)}</td><td class="num">${Math.round(step.runningFt).toLocaleString('en-US')} ft</td><td class="tld-why">${step.detail}</td>`;
           stepsBody.appendChild(tr);
         }
+      }
+
+      const chart = document.querySelector<HTMLElement>('[data-tld-chart]');
+      if (chart) {
+        chart.replaceChildren(
+          ...chartRows(result.steps).map((row) => {
+            const li = document.createElement('li');
+            li.className = `tld-chart-row is-${row.direction}`;
+            const label = Object.assign(document.createElement('span'), { className: 'tld-chart-label', textContent: row.label });
+            const track = Object.assign(document.createElement('span'), { className: 'tld-chart-track' });
+            const base = Object.assign(document.createElement('span'), { className: 'tld-chart-base' });
+            base.style.width = `${row.basePct}%`;
+            const delta = Object.assign(document.createElement('span'), { className: 'tld-chart-delta' });
+            delta.style.left = `${row.deltaLeftPct}%`;
+            delta.style.width = `${row.deltaPct}%`;
+            track.append(base, delta);
+            const value = Object.assign(document.createElement('span'), { className: 'tld-chart-value num', textContent: `${Math.round(row.runningFt).toLocaleString('en-US')} ft` });
+            li.append(label, track, value);
+            return li;
+          }),
+        );
       }
     }
 
