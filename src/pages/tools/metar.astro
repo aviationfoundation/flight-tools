@@ -4,9 +4,10 @@ export const prerender = false;
 import { env } from 'cloudflare:workers';
 import Layout from '../../layouts/Layout.astro';
 import MetarDecoder from '../../components/MetarDecoder.astro';
-import { decodeMetar, decodeTaf, visibilityShort, type DecodedMetar, type DecodedTaf } from '../../lib/metar';
-import { flightCategory, ceilingFt, type FlightCategory } from '../../lib/metar-compute';
+import { decodeMetar, decodeTaf, formatMiles, type DecodedMetar, type DecodedTaf } from '../../lib/metar';
+import { CATEGORY_MEANING, type FlightCategory } from '../../lib/metar-compute';
 import { fetchBoard, fetchObservation } from '../../lib/wx-source';
+import { BOARD_STATIONS } from '../../lib/board-stations';
 import { getStation, normalizeStationId, searchStations } from '../../lib/wx-stations';
 
 const params = Astro.url.searchParams;
@@ -125,49 +126,49 @@ const examples = [
   { icao: 'PANC', note: 'Subarctic' },
 ];
 
-interface BoardTile {
+type BoardCategory = Exclude<FlightCategory, 'UNKNOWN'>;
+
+interface BoardItem {
   icao: string;
-  note: string;
-  name: string | null;
-  category: FlightCategory | null;
-  wind: string | null;
-  visibility: string | null;
-  ceiling: string | null;
-  observed: string | null;
+  place: string;
+  why: string;
 }
 
-function windText(report: DecodedMetar): string | null {
-  const wind = report.wind;
-  if (!wind) return null;
-  if (wind.calm) return 'Calm';
-  const speed = `${wind.speedKt ?? '-'}${wind.gustKt ? `G${wind.gustKt}` : ''} kt`;
-  if (wind.variable || wind.directionDeg == null) return `Variable ${speed}`;
-  return `${String(wind.directionDeg).padStart(3, '0')}° ${speed}`;
+const BOARD_ORDER: BoardCategory[] = ['VFR', 'MVFR', 'IFR', 'LIFR'];
+const BOARD_LIMIT = 8;
+
+function boardCategory(visSm: number | null, ceiling: number | null, hasClouds: boolean): FlightCategory {
+  if (visSm == null && ceiling == null && !hasClouds) return 'UNKNOWN';
+  const byVis: BoardCategory = visSm == null ? 'VFR' : visSm < 1 ? 'LIFR' : visSm < 3 ? 'IFR' : visSm <= 5 ? 'MVFR' : 'VFR';
+  const byCeiling: BoardCategory = ceiling == null ? 'VFR' : ceiling < 500 ? 'LIFR' : ceiling < 1000 ? 'IFR' : ceiling <= 3000 ? 'MVFR' : 'VFR';
+  return BOARD_ORDER.indexOf(byVis) > BOARD_ORDER.indexOf(byCeiling) ? byVis : byCeiling;
 }
 
-let board: BoardTile[] | null = null;
+function shortPlace(name: string | null, icao: string): string {
+  if (!name) return icao;
+  return name.replace(/\s+,/g, ',').replace(/,\s*(US|CA)$/, '');
+}
+
+let board: Array<{ category: BoardCategory; items: BoardItem[] }> | null = null;
+let boardCount = 0;
 if (!report && !errorMessage && !stationParam && !rawParam) {
-  const rows = await fetchBoard(examples.map((example) => example.icao));
-  board = examples.map((example) => {
-    const row = rows?.find((r) => r.icao === example.icao);
-    if (!row) {
-      return { ...example, name: null, category: null, wind: null, visibility: null, ceiling: null, observed: null };
+  const rows = await fetchBoard(BOARD_STATIONS);
+  if (rows && rows.length) {
+    const byIcao = new Map(rows.map((row) => [row.icao, row]));
+    const groups = new Map<BoardCategory, BoardItem[]>(BOARD_ORDER.map((cat) => [cat, []]));
+    for (const icao of BOARD_STATIONS) {
+      const row = byIcao.get(icao);
+      if (!row) continue;
+      const category = boardCategory(row.visibilitySm, row.ceilingFt, row.hasClouds);
+      if (category === 'UNKNOWN') continue;
+      const vis = row.visibilitySm != null ? `${formatMiles(Math.round(row.visibilitySm * 100) / 100)}${row.visibilityPlus ? '+' : ''} sm` : null;
+      const ceiling = row.ceilingFt != null ? `ceiling ${row.ceilingFt.toLocaleString('en-US')} ft` : 'no ceiling';
+      groups.get(category)!.push({ icao, place: shortPlace(row.name, icao), why: [vis, ceiling].filter(Boolean).join(', ') });
+      boardCount += 1;
     }
-    const decoded = decodeMetar(row.metarRaw);
-    const vis = decoded.cavok ? { value: '10+', unit: 'km' } : visibilityShort(decoded.visibility);
-    const ceiling = ceilingFt(decoded.clouds);
-    return {
-      ...example,
-      name: row.name,
-      category: flightCategory(decoded),
-      wind: windText(decoded),
-      visibility: vis ? `${vis.value} ${vis.unit}` : null,
-      ceiling: ceiling != null ? `Ceiling ${ceiling.toLocaleString('en-US')} ft` : 'No ceiling',
-      observed: decoded.time ? `${String(decoded.time.hour).padStart(2, '0')}:${String(decoded.time.minute).padStart(2, '0')}Z` : null,
-    };
-  });
+    board = BOARD_ORDER.map((category) => ({ category, items: groups.get(category)! }));
+  }
 }
-const boardIsLive = !!board?.some((tile) => tile.category != null);
 
 const pageTitle = report?.station
   ? `${report.station} METAR decoded · aviation.foundation`
@@ -263,31 +264,63 @@ const pageTitle = report?.station
     ) : (
       !errorMessage && (
         <section class="wx-board" aria-labelledby="wx-board-title">
-          <h2 class="wx-board-title" id="wx-board-title">{boardIsLive ? 'Conditions right now' : 'Try one of these'}</h2>
-          <ul class="wx-board-grid">
-            {board?.map((tile) => (
-              <li>
-                <a
-                  href={`/tools/metar?station=${tile.icao}`}
-                  class={`wx-tile ${tile.category ? `cat-${tile.category.toLowerCase()}` : 'is-static'}`}
-                >
-                  <span class="wx-tile-top">
-                    <span class="wx-tile-icao">{tile.icao}</span>
-                    {tile.category && <span class="wx-tile-cat">{tile.category === 'UNKNOWN' ? '?' : tile.category}</span>}
-                  </span>
-                  <span class="wx-tile-name">{tile.name ?? tile.note}</span>
-                  {tile.category ? (
-                    <span class="wx-tile-wx num">
-                      {[tile.wind, tile.visibility, tile.ceiling].filter(Boolean).join(' · ')}
-                    </span>
-                  ) : (
-                    <span class="wx-tile-wx">{tile.note}</span>
-                  )}
-                  {tile.observed && <span class="wx-tile-meta num">{tile.note}, observed {tile.observed}</span>}
-                </a>
-              </li>
-            ))}
-          </ul>
+          {board ? (
+            <>
+              <h2 class="wx-board-title" id="wx-board-title">Where it's VFR, MVFR, IFR and LIFR right now</h2>
+              <p class="wx-board-sub">
+                {boardCount} airports across Canada and the US, plus a few major hubs elsewhere, from
+                each one's latest METAR. Select one to decode it.
+              </p>
+              <div class="wx-cat-cols">
+                {board.map((column) => (
+                  <section class={`wx-cat-col cat-${column.category.toLowerCase()}`} aria-labelledby={`wx-cat-${column.category}`}>
+                    <header class="wx-cat-head">
+                      <h3 class="wx-cat-name" id={`wx-cat-${column.category}`}>{column.category}</h3>
+                      <span class="wx-cat-count num">{column.items.length}</span>
+                      <p class="wx-cat-def">{CATEGORY_MEANING[column.category]}</p>
+                    </header>
+                    {column.items.length ? (
+                      <>
+                        <ul class="wx-cat-list">
+                          {column.items.slice(0, BOARD_LIMIT).map((item) => (
+                            <li>
+                              <a href={`/tools/metar?station=${item.icao}`}>
+                                <span class="wx-cat-icao num">{item.icao}</span>
+                                <span class="wx-cat-place">{item.place}</span>
+                                <span class="wx-cat-why num">{item.why}</span>
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                        {column.items.length > BOARD_LIMIT && (
+                          <details class="wx-cat-more">
+                            <summary>Show {column.items.length - BOARD_LIMIT} more</summary>
+                            <ul class="wx-cat-list">
+                              {column.items.slice(BOARD_LIMIT).map((item) => (
+                                <li>
+                                  <a href={`/tools/metar?station=${item.icao}`}>
+                                    <span class="wx-cat-icao num">{item.icao}</span>
+                                    <span class="wx-cat-place">{item.place}</span>
+                                    <span class="wx-cat-why num">{item.why}</span>
+                                  </a>
+                                </li>
+                              ))}
+                            </ul>
+                          </details>
+                        )}
+                      </>
+                    ) : (
+                      <p class="wx-cat-empty">None of these airports right now.</p>
+                    )}
+                  </section>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p class="wx-board-sub" id="wx-board-title">
+              Live conditions didn't load. Enter an airport code above, or try one of the examples.
+            </p>
+          )}
           <p class="wx-board-foot">
             Data from NOAA's Aviation Weather Center, refreshed every few minutes. Use an official
             briefing before flight.
@@ -438,83 +471,125 @@ const pageTitle = report?.station
     margin: 0 0 14px;
   }
 
-  .wx-board-grid {
+  .wx-board-sub {
+    margin: 0 0 20px;
+    font-size: 13.5px;
+    color: var(--text-muted);
+    max-width: 64ch;
+  }
+
+  .wx-cat-cols {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    align-items: start;
+  }
+
+  .wx-cat-col {
+    --band: #3C4349;
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+  }
+
+  .wx-cat-col.cat-vfr { --band: #17663B; }
+  .wx-cat-col.cat-mvfr { --band: #0B3F73; }
+  .wx-cat-col.cat-ifr { --band: #A3261B; }
+  .wx-cat-col.cat-lifr { --band: #6B2A7C; }
+
+  .wx-cat-head {
+    background: var(--band);
+    color: #FFFFFF;
+    padding: 16px 16px 14px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: 4px 12px;
+  }
+
+  .wx-cat-name {
+    font-family: var(--font-archivo);
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    margin: 0;
+  }
+
+  .wx-cat-count {
+    font-family: var(--font-archivo);
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1;
+    opacity: 0.6;
+  }
+
+  .wx-cat-def {
+    grid-column: 1 / -1;
+    margin: 6px 0 0;
+    font-size: 12px;
+    line-height: 1.45;
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .wx-cat-list {
     list-style: none;
     margin: 0;
     padding: 0;
+  }
+
+  .wx-cat-list li + li { border-top: 1px solid var(--border); }
+
+  .wx-cat-list a {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
-  }
-
-  .wx-tile {
-    --band: #3C4349;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-height: 168px;
-    padding: 18px 18px 16px;
-    background: var(--band);
-    color: #FFFFFF;
-    text-decoration: none;
-    transition: filter var(--dur-fast) var(--ease-out);
-  }
-
-  .wx-tile.cat-vfr { --band: #17663B; }
-  .wx-tile.cat-mvfr { --band: #0B3F73; }
-  .wx-tile.cat-ifr { --band: #A3261B; }
-  .wx-tile.cat-lifr { --band: #6B2A7C; }
-
-  .wx-tile.is-static {
-    background: var(--surface-card);
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 2px 10px;
+    padding: 10px 16px;
     color: var(--fg);
-    border: 1px solid var(--border);
-    min-height: 120px;
+    text-decoration: none;
   }
 
-  .wx-tile:hover { filter: brightness(1.08); }
-  .wx-tile.is-static:hover { border-color: var(--border-strong); filter: none; }
-  .wx-tile:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
+  .wx-cat-list a:hover { background: var(--surface-subtle); }
+  .wx-cat-list a:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
 
-  .wx-tile-top {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
-  .wx-tile-icao {
+  .wx-cat-icao {
     font-family: var(--font-archivo);
-    font-size: 40px;
     font-weight: 700;
-    letter-spacing: -0.03em;
-    line-height: 0.95;
+    font-size: 15px;
   }
 
-  .wx-tile-cat {
-    font-family: var(--font-archivo);
-    font-size: 20px;
-    font-weight: 700;
+  .wx-cat-place {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    align-self: center;
   }
 
-  .wx-tile-name {
-    font-size: 13px;
-    opacity: 0.82;
+  .wx-cat-why {
+    grid-column: 1 / -1;
+    font-size: 12px;
+    color: var(--text-subtle);
   }
 
-  .wx-tile-wx {
-    margin-top: auto;
-    font-size: 13.5px;
-    font-weight: 500;
+  .wx-cat-more { border-top: 1px solid var(--border); }
+
+  .wx-cat-more > summary {
+    cursor: pointer;
+    padding: 10px 16px;
+    font-size: 12.5px;
+    color: var(--text-muted);
   }
 
-  .wx-tile-meta {
-    font-size: 11.5px;
-    opacity: 0.72;
-  }
+  .wx-cat-more > summary:hover { color: var(--fg); }
+  .wx-cat-more[open] > summary { border-bottom: 1px solid var(--border); }
 
-  .wx-tile.is-static .wx-tile-name,
-  .wx-tile.is-static .wx-tile-wx { color: var(--text-muted); opacity: 1; }
+  .wx-cat-empty {
+    margin: 0;
+    padding: 14px 16px;
+    font-size: 12.5px;
+    color: var(--text-subtle);
+  }
 
   .wx-board-foot {
     margin: 14px 0 0;
@@ -522,12 +597,134 @@ const pageTitle = report?.station
     color: var(--text-subtle);
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .wx-tile { transition: none; }
+  .wx-board-sub {
+    margin: 0 0 20px;
+    font-size: 13.5px;
+    color: var(--text-muted);
+    max-width: 64ch;
   }
 
-  @media (max-width: 960px) {
-    .wx-board-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wx-cat-cols {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    align-items: start;
+  }
+
+  .wx-cat-col {
+    --band: #3C4349;
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+  }
+
+  .wx-cat-col.cat-vfr { --band: #17663B; }
+  .wx-cat-col.cat-mvfr { --band: #0B3F73; }
+  .wx-cat-col.cat-ifr { --band: #A3261B; }
+  .wx-cat-col.cat-lifr { --band: #6B2A7C; }
+
+  .wx-cat-head {
+    background: var(--band);
+    color: #FFFFFF;
+    padding: 16px 16px 14px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: 4px 12px;
+  }
+
+  .wx-cat-name {
+    font-family: var(--font-archivo);
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    margin: 0;
+  }
+
+  .wx-cat-count {
+    font-family: var(--font-archivo);
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1;
+    opacity: 0.6;
+  }
+
+  .wx-cat-def {
+    grid-column: 1 / -1;
+    margin: 6px 0 0;
+    font-size: 12px;
+    line-height: 1.45;
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .wx-cat-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .wx-cat-list li + li { border-top: 1px solid var(--border); }
+
+  .wx-cat-list a {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 2px 10px;
+    padding: 10px 16px;
+    color: var(--fg);
+    text-decoration: none;
+  }
+
+  .wx-cat-list a:hover { background: var(--surface-subtle); }
+  .wx-cat-list a:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
+
+  .wx-cat-icao {
+    font-family: var(--font-archivo);
+    font-weight: 700;
+    font-size: 15px;
+  }
+
+  .wx-cat-place {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    align-self: center;
+  }
+
+  .wx-cat-why {
+    grid-column: 1 / -1;
+    font-size: 12px;
+    color: var(--text-subtle);
+  }
+
+  .wx-cat-more { border-top: 1px solid var(--border); }
+
+  .wx-cat-more > summary {
+    cursor: pointer;
+    padding: 10px 16px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+
+  .wx-cat-more > summary:hover { color: var(--fg); }
+  .wx-cat-more[open] > summary { border-bottom: 1px solid var(--border); }
+
+  .wx-cat-empty {
+    margin: 0;
+    padding: 14px 16px;
+    font-size: 12.5px;
+    color: var(--text-subtle);
+  }
+
+  .wx-board-foot {
+    margin: 14px 0 0;
+    font-size: 12px;
+    color: var(--text-subtle);
+  }
+
+  @media (max-width: 1080px) {
+    .wx-cat-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
 
   @media (max-width: 640px) {
@@ -544,9 +741,7 @@ const pageTitle = report?.station
     .wx-example { font-size: 11px; padding: 3px 7px; }
     .wx-paste-actions { flex-direction: column; align-items: stretch; }
     .wx-paste-actions .btn-outline { width: 100%; }
-    .wx-board-grid { grid-template-columns: minmax(0, 1fr); }
-    .wx-tile { min-height: 0; }
-    .wx-tile-icao { font-size: 34px; }
+    .wx-cat-cols { grid-template-columns: minmax(0, 1fr); }
   }
 </style>
 

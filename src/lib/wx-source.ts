@@ -77,7 +77,33 @@ const METERS_TO_FEET = 3.280839895;
 export interface BoardRow {
   icao: string;
   name: string | null;
-  metarRaw: string;
+  visibilitySm: number | null;
+  visibilityPlus: boolean;
+  ceilingFt: number | null;
+  hasClouds: boolean;
+  observedAt: string | null;
+}
+
+interface AwcBoardRow {
+  icaoId?: string;
+  name?: string;
+  visib?: number | string;
+  clouds?: Array<{ cover?: string; base?: number | null }>;
+  reportTime?: string;
+}
+
+function parseAwcVisibility(value: number | string | undefined): { sm: number | null; plus: boolean } {
+  if (typeof value === 'number') return { sm: value, plus: false };
+  if (typeof value !== 'string') return { sm: null, plus: false };
+  const plus = value.includes('+');
+  const parts = value.replace('+', '').trim().split(/\s+/);
+  let sm = 0;
+  for (const part of parts) {
+    const [num, den] = part.split('/').map(Number);
+    if (Number.isNaN(num)) return { sm: null, plus: false };
+    sm += den ? num / den : num;
+  }
+  return { sm, plus };
 }
 
 export async function fetchBoard(icaos: string[]): Promise<BoardRow[] | null> {
@@ -88,11 +114,25 @@ export async function fetchBoard(icaos: string[]): Promise<BoardRow[] | null> {
   if (!response) return null;
 
   try {
-    const rows = (await response.json()) as AwcMetarRow[];
+    const rows = (await response.json()) as AwcBoardRow[];
     if (!Array.isArray(rows)) return null;
     return rows
-      .filter((row) => row.icaoId && row.rawOb)
-      .map((row) => ({ icao: row.icaoId!, name: row.name ?? null, metarRaw: row.rawOb!.trim() }));
+      .filter((row) => row.icaoId)
+      .map((row) => {
+        const vis = parseAwcVisibility(row.visib);
+        const ceilings = (row.clouds ?? [])
+          .filter((c) => (c.cover === 'BKN' || c.cover === 'OVC' || c.cover === 'OVX' || c.cover === 'VV') && typeof c.base === 'number')
+          .map((c) => c.base as number);
+        return {
+          icao: row.icaoId!,
+          name: row.name ?? null,
+          visibilitySm: vis.sm,
+          visibilityPlus: vis.plus,
+          ceilingFt: ceilings.length ? Math.min(...ceilings) : null,
+          hasClouds: (row.clouds ?? []).length > 0,
+          observedAt: row.reportTime ?? null,
+        };
+      });
   } catch {
     return null;
   }
