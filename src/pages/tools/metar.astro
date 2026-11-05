@@ -196,12 +196,7 @@ const pageTitle = report?.station
   <div class="page-container container-site px-site">
 
     <header class="page-header">
-      <div class="eyebrow">Flight planning tool</div>
       <h1 class="serif page-title">METAR &amp; TAF Decoder</h1>
-      <p class="page-lead">
-        Enter an airport code to decode its latest METAR and TAF: the wind on your runway, cloud
-        layers by height, density altitude, and the forecast hour by hour.
-      </p>
     </header>
 
     <section class="wx-console" aria-label="Look up a report">
@@ -276,14 +271,9 @@ const pageTitle = report?.station
       <MetarDecoder report={report} taf={taf} station={stationInfo} fetchedAt={fetchedAt} runways={runways} />
     ) : (
       !errorMessage && (
-        <section class="wx-board" aria-labelledby="wx-board-title">
+        <section class="wx-board" aria-label="Current flight categories">
           {board ? (
             <>
-              <h2 class="wx-board-title" id="wx-board-title">Where it's VFR, MVFR, IFR and LIFR right now</h2>
-              <p class="wx-board-sub">
-                Every reporting station in North America on the map, and {boardCount} major airports
-                listed below, from each one's latest METAR. Select any of them to decode it.
-              </p>
               <figure class="wx-map" data-wx-map hidden>
                 <div class="wx-map-frame">
                   <div class="wx-map-canvas" data-wx-map-canvas aria-label="Map of reporting stations, coloured by flight category"></div>
