@@ -1,48 +1,8 @@
 export { normaliseAnswer } from './answer.ts';
 
-export interface Mark {
-  text: string;
-  label: string;
-  note: string;
-}
-
-export interface Option {
-  text: string;
-  correct?: boolean;
-  why: string;
-}
-
-export interface TriageItem {
-  raw: string;
-  affects: boolean;
-  why: string;
-}
-
-export type Block =
-  | { kind: 'p'; text: string }
-  | { kind: 'notice'; title?: string; text: string }
-  | { kind: 'notam'; raw: string; marks?: Mark[]; caption?: string }
-  | { kind: 'table'; head: string[]; rows: string[][] }
-  | { kind: 'rule'; title: string; text: string }
-  | { kind: 'choice'; id: string; prompt: string; raw?: string; options: Option[] }
-  | { kind: 'answer'; id: string; prompt: string; raw?: string; accept: string[]; placeholder: string; why: string }
-  | { kind: 'pick'; id: string; prompt: string; raw: string; choices: string[]; answer: string; why: string }
-  | { kind: 'triage'; id: string; flight: Array<[string, string]>; items: TriageItem[]; map?: DrillMap; debrief?: { title: string; text: string } }
-  | { kind: 'timeline'; caption: string; window: [number, number]; offsetHours: number; localLabel: string };
-
-export interface DrillMap {
-  route: Array<[number, number]>;
-  places: Array<{ label: string; lat: number; lon: number }>;
-  areas: Array<{ label: string; lat: number; lon: number; radiusNm: number }>;
-}
-
-export interface Lesson {
-  id: string;
-  title: string;
-  summary: string;
-  minutes: number;
-  blocks: Block[];
-}
+export type { Block, DrillMap, Lesson, Mark, Option, TriageItem, TriageLabels } from './types.ts';
+export { checkCount } from './types.ts';
+import type { Lesson } from './types.ts';
 
 export const COURSE_ID = 'notam';
 
@@ -952,13 +912,4 @@ E) RWY 08R/26L CLSD.`,
 
 export function lessonById(id: string): Lesson | undefined {
   return LESSONS.find((lesson) => lesson.id === id);
-}
-
-export function checkCount(lesson: Lesson): number {
-  let n = 0;
-  for (const block of lesson.blocks) {
-    if (block.kind === 'triage') n += block.items.length;
-    else if (block.kind === 'choice' || block.kind === 'answer' || block.kind === 'pick') n += 1;
-  }
-  return n;
 }

@@ -1,22 +1,24 @@
 ---
-import { LESSONS } from '../../lib/learn/course';
+import type { Course } from '../../lib/learn/courses';
 import type { LessonProgress } from '../../lib/accounts';
 
 interface Props {
+  course: Course;
   current: string;
   progress: LessonProgress[];
 }
 
-const { current, progress } = Astro.props;
+const { course, current, progress } = Astro.props;
+const LESSONS = course.lessons;
 const done = new Set(progress.map((p) => p.lesson));
 ---
 
 <nav class="rail" aria-label="Lessons in this course">
-  <a class="rail-course" href="/learn">Reading NOTAMs</a>
+  <a class="rail-course" href={`/learn/${course.slug}`}>{course.title}</a>
   <ol class="rail-list">
     {LESSONS.map((lesson, i) => (
       <li class={`${done.has(lesson.id) ? 'is-done' : ''}${lesson.id === current ? ' is-current' : ''}`} data-rail-lesson={lesson.id}>
-        <a href={`/learn/${lesson.id}`} aria-current={lesson.id === current ? 'page' : undefined}>
+        <a href={`/learn/${course.slug}/${lesson.id}`} aria-current={lesson.id === current ? 'page' : undefined}>
           <span class="rail-num num" aria-hidden="true">{i + 1}</span>
           <span class="rail-title">{lesson.title}</span>
           <span class="rail-state sr-only">{done.has(lesson.id) ? ', finished' : ''}</span>

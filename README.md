@@ -7,7 +7,9 @@ Flight planning tools from [aviation.foundation](https://aviation.foundation), s
 - E6B: `/tools/e6b`
 - Weight & balance: `/tools/weight-balance`
 - Takeoff & landing distance: `/tools/takeoff-landing-distance`
-- Reading NOTAMs, a course in eleven lessons: `/learn`
+- Courses: `/learn`
+  - Reading NOTAMs, eleven lessons: `/learn/notams`
+  - Reading METARs and TAFs, nine lessons: `/learn/metar-taf`
 
 Weather data comes from [aviationweather.gov](https://aviationweather.gov).
 
@@ -37,7 +39,9 @@ With `--push`, the script uploads the files to `/api/internal/data`, which needs
 
 ## Course and accounts
 
-The course content lives in `src/lib/learn/course.ts`. `npm test` checks it against the NOTAM decoder: every annotated part must appear in its NOTAM, every course NOTAM must decode cleanly, and the codes, contractions, times and drill answers must agree with the engine.
+Courses are listed in `src/lib/learn/courses.ts`. The NOTAM lessons live in `src/lib/learn/course.ts` and the METAR and TAF lessons in `src/lib/learn/metar-course.ts`. `npm test` checks each against its decoder: every annotated part must appear in its report, every course report must decode cleanly, and the codes, ceilings, flight categories, crosswinds, pressures, forecast periods and drill answers must agree with the engine.
+
+A course's `id` is stored with each score on aviation.foundation, and the main site only accepts the ids it knows, so a new course needs its id added to `COURSES` in the main site's `/api/courses/progress` first.
 
 Lessons need an aviation.foundation account. This Worker has no database. It reads the `af_session` cookie that aviation.foundation sets for the whole domain, asks the main site who the visitor is through the `ACCOUNTS` service binding, and saves lesson scores there through `/api/courses/progress`.
 

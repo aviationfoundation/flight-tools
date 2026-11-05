@@ -1,23 +1,29 @@
 ---
 export const prerender = false;
 
-import Layout from '../../layouts/Layout.astro';
-import NotamFigure from '../../components/learn/NotamFigure.astro';
-import Check from '../../components/learn/Check.astro';
-import Triage from '../../components/learn/Triage.astro';
-import Timeline from '../../components/learn/Timeline.astro';
-import LessonRail from '../../components/learn/LessonRail.astro';
-import SignInGate from '../../components/learn/SignInGate.astro';
-import { COURSE_ID, LESSONS, checkCount, lessonById } from '../../lib/learn/course';
-import { getAccount, getProgress, type LessonProgress } from '../../lib/accounts';
+import Layout from '../../../layouts/Layout.astro';
+import NotamFigure from '../../../components/learn/NotamFigure.astro';
+import Check from '../../../components/learn/Check.astro';
+import Triage from '../../../components/learn/Triage.astro';
+import Timeline from '../../../components/learn/Timeline.astro';
+import LessonRail from '../../../components/learn/LessonRail.astro';
+import SignInGate from '../../../components/learn/SignInGate.astro';
+import { courseBySlug, lessonIn } from '../../../lib/learn/courses';
+import { checkCount } from '../../../lib/learn/types';
+import { getAccount, getProgress, type LessonProgress } from '../../../lib/accounts';
+
+const course = courseBySlug(Astro.params.course ?? '');
+if (!course) return Astro.rewrite('/404');
+const LESSONS = course.lessons;
+const base = `/learn/${course.slug}`;
 
 Astro.response.headers.set('Cache-Control', 'private, no-store');
 
-const lesson = lessonById(Astro.params.lesson ?? '');
+const lesson = lessonIn(course, Astro.params.lesson ?? '');
 if (!lesson) Astro.response.status = 404;
 
 const state = lesson ? await getAccount(Astro.request) : { status: 'signed-out' as const };
-const progress: LessonProgress[] = state.status === 'signed-in' ? (await getProgress(state.token, COURSE_ID)) ?? [] : [];
+const progress: LessonProgress[] = state.status === 'signed-in' ? (await getProgress(state.token, course.id)) ?? [] : [];
 const index = lesson ? LESSONS.indexOf(lesson) : -1;
 const previous = index > 0 ? LESSONS[index - 1] : null;
 const next = index >= 0 && index < LESSONS.length - 1 ? LESSONS[index + 1] : null;
@@ -32,21 +38,22 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
 ---
 
 <Layout
-  title={lesson ? `${lesson.title} · Reading NOTAMs` : 'Lesson not found · Reading NOTAMs'}
+  title={lesson ? `${lesson.title} · ${course.title}` : `Lesson not found · ${course.title}`}
   description={lesson ? lesson.summary : 'This lesson does not exist.'}
   currentPath="/learn"
 >
   {!lesson ? (
     <div class="lp-missing container-site px-site">
       <h1 class="lp-title">There's no lesson at this address</h1>
-      <p class="lp-summary"><a href="/learn">See all the lessons</a>.</p>
+      <p class="lp-summary"><a href={base}>See all the lessons</a>.</p>
     </div>
   ) : (
     <div class="lp container-site px-site">
-      <LessonRail current={lesson.id} progress={progress} />
+      <LessonRail course={course} current={lesson.id} progress={progress} />
 
       <article
         class="lp-main"
+        data-course={course.id}
         data-lesson={lesson.id}
         data-total={total}
         data-signed-in={state.status === 'signed-in' ? '1' : undefined}
@@ -74,7 +81,7 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
                     {block.title && <p class="lp-notice-title">{block.title}</p>}
                     <p class="lp-notice-text">{block.text}</p>
                   </aside>
-                ) : block.kind === 'notam' ? (
+                ) : block.kind === 'notam' || block.kind === 'report' ? (
                   <NotamFigure raw={block.raw} marks={block.marks} caption={block.caption} id={`${lesson.id}-f${position}`} />
                 ) : block.kind === 'table' ? (
                   <div class="lp-table-wrap">
@@ -112,19 +119,19 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
               <p class="lp-done-save" data-save></p>
               <div class="lp-done-actions">
                 {next ? (
-                  <a class="btn-solid" href={`/learn/${next.id}`}>Next: {next.title}</a>
+                  <a class="btn-solid" href={`${base}/${next.id}`}>Next: {next.title}</a>
                 ) : (
-                  <a class="btn-solid" href="/tools/notam">Decode a real briefing</a>
+                  <a class="btn-solid" href={course.tool.href}>{course.tool.label}</a>
                 )}
-                <a class="btn-outline" href="/learn">All lessons</a>
+                <a class="btn-outline" href={base}>All lessons</a>
               </div>
             </section>
           </>
         )}
 
         <nav class="lp-pager" aria-label="Lessons">
-          {previous ? <a href={`/learn/${previous.id}`} rel="prev"><span>Previous</span>{previous.title}</a> : <span></span>}
-          {next && <a href={`/learn/${next.id}`} rel="next" class="lp-pager-next"><span>Next</span>{next.title}</a>}
+          {previous ? <a href={`${base}/${previous.id}`} rel="prev"><span>Previous</span>{previous.title}</a> : <span></span>}
+          {next && <a href={`${base}/${next.id}`} rel="next" class="lp-pager-next"><span>Next</span>{next.title}</a>}
         </nav>
       </article>
     </div>
@@ -317,12 +324,13 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
 </style>
 
 <script>
-  import { normaliseAnswer } from '../../lib/learn/answer';
+  import { normaliseAnswer } from '../../../lib/learn/answer';
 
   const root = document.querySelector<HTMLElement>('[data-lesson][data-signed-in]');
   if (root) setup(root);
 
   function setup(article: HTMLElement) {
+    const course = article.dataset.course!;
     const lesson = article.dataset.lesson!;
     const total = Number(article.dataset.total);
     const outcome = new Map<string, boolean>();
@@ -348,7 +356,7 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
       fetch('/api/learn/progress', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lesson, correct }),
+        body: JSON.stringify({ course, lesson, correct }),
       })
         .then(async (response) => {
           if (response.ok) {
@@ -466,7 +474,7 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
           if (ok) right += 1;
           record(`${id}#${index}`, ok);
           item.classList.add(ok ? 'is-right' : 'is-wrong');
-          item.querySelector<HTMLElement>('.tr-verdict')!.textContent = `${ok ? 'Right.' : 'Not quite.'} ${item.dataset.affects === '1' ? 'It affects this flight.' : 'It doesn\'t affect this flight.'}`;
+          item.querySelector<HTMLElement>('.tr-verdict')!.textContent = `${ok ? 'Right.' : 'Not quite.'} ${item.dataset.affects === '1' ? check.dataset.verdictYes : check.dataset.verdictNo}`;
           item.querySelector<HTMLElement>('.tr-why')!.hidden = false;
           item.querySelectorAll<HTMLButtonElement>('[data-answer]').forEach((b) => (b.disabled = true));
         });
@@ -486,7 +494,7 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
           places: Array<{ label: string; lat: number; lon: number }>;
           areas: Array<{ label: string; lat: number; lon: number; radiusNm: number }>;
         };
-        const { createMap, cssColor } = await import('../../lib/map-client');
+        const { createMap, cssColor } = await import('../../../lib/map-client');
         const accent = cssColor(document.documentElement, '--accent-blue') || '#00396E';
         const danger = cssColor(document.documentElement, '--danger') || '#B42318';
         const ink = cssColor(document.documentElement, '--fg') || '#111111';

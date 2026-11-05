@@ -7,6 +7,5 @@ export default defineConfig({
   redirects: {
     '/course': '/learn',
     '/courses': '/learn',
-    '/learn/notams': '/learn',
   },
 });

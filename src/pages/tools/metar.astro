@@ -268,7 +268,12 @@ const pageTitle = report?.station
     )}
 
     {report ? (
-      <MetarDecoder report={report} taf={taf} station={stationInfo} fetchedAt={fetchedAt} runways={runways} />
+      <>
+        <MetarDecoder report={report} taf={taf} station={stationInfo} fetchedAt={fetchedAt} runways={runways} />
+        <p class="wx-course-link">
+          New to METARs and TAFs? The <a href="/learn/metar-taf">Reading METARs and TAFs course</a> explains every group, with practice questions.
+        </p>
+      </>
     ) : (
       !errorMessage && (
         <section class="wx-board" aria-label="Current flight categories">
@@ -341,6 +346,9 @@ const pageTitle = report?.station
 </Layout>
 
 <style>
+  .wx-course-link { margin: 40px 0 0; font-size: 14px; color: var(--text-muted); }
+  .wx-course-link a { color: var(--fg); }
+
   .page-container { padding-top: 56px; padding-bottom: 90px; }
 
   .page-header { max-width: 760px; }

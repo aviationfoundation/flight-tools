@@ -1,14 +1,24 @@
 ---
-import type { Block } from '../../lib/learn/course';
+import type { Block, TriageLabels } from '../../lib/learn/types';
 
 interface Props {
   block: Extract<Block, { kind: 'triage' }>;
 }
 
 const { block } = Astro.props;
+const labels: TriageLabels = block.labels ?? {
+  yes: 'Affects this flight',
+  no: 'Doesn\'t',
+  question: 'Does {name} affect this flight?',
+  submit: 'Check my briefing',
+  noun: 'NOTAMs',
+  verdictYes: 'It affects this flight.',
+  verdictNo: 'It doesn\'t affect this flight.',
+};
+const question = (name: string) => labels.question.replace('{name}', name);
 ---
 
-<section class="tr" data-check={block.id} data-kind="triage" aria-label="Briefing drill">
+<section class="tr" data-check={block.id} data-kind="triage" data-verdict-yes={labels.verdictYes} data-verdict-no={labels.verdictNo} aria-label="Briefing drill">
   <dl class="tr-flight">
     {block.flight.map(([label, value]) => (
       <div>
@@ -20,7 +30,7 @@ const { block } = Astro.props;
 
   {block.map && (
     <figure class="tr-map-wrap">
-      <div class="tr-map" data-tr-map={JSON.stringify(block.map)} aria-label="Map of the route from Abbotsford to Victoria, with the areas from the NOTAMs below drawn on it"></div>
+      <div class="tr-map" data-tr-map={JSON.stringify(block.map)} aria-label={block.map.description ?? 'Map of the route, with the areas from the NOTAMs below drawn on it'}></div>
       <figcaption class="tr-map-caption">Your route, with the areas from these NOTAMs drawn the way a briefing app would show them.</figcaption>
     </figure>
   )}
@@ -29,9 +39,9 @@ const { block } = Astro.props;
     {block.items.map((item, i) => (
       <li class="tr-item" data-item={i} data-affects={item.affects ? '1' : '0'}>
         <pre class="tr-raw num">{item.raw}</pre>
-        <div class="tr-choice" role="radiogroup" aria-label={`Does ${item.raw.split(/\s/)[0]} affect this flight?`}>
-          <button type="button" class="tr-btn" role="radio" aria-checked="false" data-answer="1">Affects this flight</button>
-          <button type="button" class="tr-btn" role="radio" aria-checked="false" data-answer="0">Doesn't</button>
+        <div class="tr-choice" role="radiogroup" aria-label={question(item.name ?? item.raw.split(/\s/)[0])}>
+          <button type="button" class="tr-btn" role="radio" aria-checked="false" data-answer="1">{labels.yes}</button>
+          <button type="button" class="tr-btn" role="radio" aria-checked="false" data-answer="0">{labels.no}</button>
         </div>
         <p class="tr-why" hidden><strong class="tr-verdict"></strong> {item.why}</p>
       </li>
@@ -39,8 +49,8 @@ const { block } = Astro.props;
   </ol>
 
   <div class="tr-actions">
-    <button type="button" class="btn-solid tr-submit" disabled>Check my briefing</button>
-    <p class="tr-status" aria-live="polite">Decide on all {block.items.length} NOTAMs to check your answers.</p>
+    <button type="button" class="btn-solid tr-submit" disabled>{labels.submit}</button>
+    <p class="tr-status" aria-live="polite">Decide on all {block.items.length} {labels.noun} to check your answers.</p>
   </div>
 
   {block.debrief && (

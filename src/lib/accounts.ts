@@ -108,7 +108,7 @@ function parseLessons(value: unknown): LessonProgress[] {
 }
 
 export async function getProgress(token: string, course: string): Promise<LessonProgress[] | null> {
-  if (devStub()) return [...devProgress.values()];
+  if (devStub()) return [...devProgress.entries()].filter(([key]) => key.startsWith(`${course}:`)).map(([, row]) => row);
   const response = await callAccounts(`/api/courses/progress?course=${encodeURIComponent(course)}`, token);
   if (!response || !response.ok) return null;
   try {
@@ -120,10 +120,11 @@ export async function getProgress(token: string, course: string): Promise<Lesson
 
 export async function saveProgress(token: string, course: string, lesson: string, correct: number, total: number): Promise<{ status: number; lessons: LessonProgress[] }> {
   if (devStub()) {
-    const previous = devProgress.get(lesson);
+    const key = `${course}:${lesson}`;
+    const previous = devProgress.get(key);
     const better = !previous || correct * previous.total > previous.correct * total;
-    devProgress.set(lesson, better ? { lesson, correct, total, completedAt: previous?.completedAt ?? new Date().toISOString() } : previous);
-    return { status: 200, lessons: [...devProgress.values()] };
+    devProgress.set(key, better ? { lesson, correct, total, completedAt: previous?.completedAt ?? new Date().toISOString() } : previous);
+    return { status: 200, lessons: (await getProgress(token, course)) ?? [] };
   }
   const response = await callAccounts('/api/courses/progress', token, { method: 'POST', body: { course, lesson, correct, total } });
   if (!response) return { status: 503, lessons: [] };

@@ -1,5 +1,5 @@
 ---
-import type { Block } from '../../lib/learn/course';
+import type { Block } from '../../lib/learn/types';
 
 type CheckBlock = Extract<Block, { kind: 'choice' | 'answer' | 'pick' }>;
 
@@ -35,6 +35,7 @@ if (check.kind === 'pick') {
 <section class="ck" data-check={check.id} data-kind={check.kind} aria-labelledby={`${check.id}-prompt`}>
   <p class="ck-tag">Check {number}</p>
   <p class="ck-prompt" id={`${check.id}-prompt`}>{check.prompt}</p>
+  {(check.kind === 'choice' || check.kind === 'answer') && check.raw && <pre class="ck-raw num">{check.raw}</pre>}
 
   {check.kind === 'choice' && (
     <div class="ck-options" role="group" aria-labelledby={`${check.id}-prompt`}>
@@ -131,6 +132,18 @@ if (check.kind === 'pick') {
 
   .ck-option:disabled { cursor: default; }
   .ck-option:disabled:not(.is-right):not(.is-wrong) { opacity: 0.6; }
+
+  .ck-raw {
+    margin: 0 0 14px;
+    padding: 12px 16px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
 
   .ck-pick {
     margin: 0;
