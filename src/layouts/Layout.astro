@@ -9,6 +9,12 @@ interface Props {
 
 const { title = 'Flight tools', description = 'Free flight-planning tools.', currentPath = Astro.url.pathname } = Astro.props;
 
+// The tools also run on aviation.foundation/tools, which is the copy search
+// engines and ads point at. Courses only live here, so they keep their own URL.
+const MIRRORED = new Set(['/tools', '/tools/metar', '/tools/notam', '/tools/e6b', '/tools/weight-balance', '/tools/takeoff-landing-distance']);
+const path = Astro.url.pathname.replace(/\/+$/, '') || '/';
+const canonical = MIRRORED.has(path) ? `https://aviation.foundation${path}` : `https://tools.aviation.foundation${path}`;
+
 const tools = [
   { href: '/tools/metar', label: 'METAR & TAF' },
   { href: '/tools/notam', label: 'NOTAM' },
@@ -26,6 +32,7 @@ const tools = [
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
     <meta name="color-scheme" content="light dark" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
