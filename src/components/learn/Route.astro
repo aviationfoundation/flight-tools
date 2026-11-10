@@ -1,0 +1,103 @@
+---
+import type { RouteStop } from '../../lib/learn/types';
+
+interface Props {
+  stops: RouteStop[];
+  caption?: string;
+}
+
+const { stops, caption } = Astro.props;
+---
+
+<figure class="rt">
+  <ol class="rt-list">
+    {stops.map((stop) => (
+      <li class="rt-stop">
+        <span class="rt-code num">{stop.code}</span>
+        <span class="rt-track" aria-hidden="true"></span>
+        <span class="rt-body">
+          <span class="rt-label">{stop.label}</span>
+          <span class="rt-note">{stop.note}</span>
+        </span>
+      </li>
+    ))}
+  </ol>
+  {caption && <figcaption class="rt-caption">{caption}</figcaption>}
+</figure>
+
+<style>
+  .rt { margin: 28px 0; font-family: var(--font-sans); }
+
+  .rt-list {
+    list-style: none;
+    margin: 0;
+    padding: 8px 20px;
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--fg);
+  }
+
+  .rt-stop {
+    display: grid;
+    grid-template-columns: 48px 13px minmax(0, 1fr);
+    column-gap: 14px;
+    align-items: stretch;
+  }
+
+  .rt-code {
+    padding-top: 13px;
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--accent-blue);
+  }
+
+  /* The line between waypoints, with a marker at each one. */
+  .rt-track {
+    position: relative;
+    display: block;
+  }
+
+  .rt-track::before {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--border-strong);
+  }
+
+  .rt-stop:first-child .rt-track::before { top: 20px; }
+  .rt-stop:last-child .rt-track::before { bottom: auto; height: 20px; }
+
+  .rt-track::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 14px;
+    width: 13px;
+    height: 13px;
+    box-sizing: border-box;
+    background: var(--surface-card);
+    border: 2px solid var(--fg);
+    transform: rotate(45deg) scale(0.82);
+  }
+
+  .rt-body {
+    display: grid;
+    gap: 3px;
+    padding: 11px 0 13px;
+  }
+
+  .rt-label { font-size: 15.5px; font-weight: 600; line-height: 1.35; }
+  .rt-note { font-size: 14px; line-height: 1.5; color: var(--text-muted); }
+
+  .rt-caption { margin-top: 8px; font-size: 13px; color: var(--text-muted); }
+
+  @media (max-width: 600px) {
+    .rt-list { padding: 6px 14px; }
+    .rt-stop { grid-template-columns: 42px 13px minmax(0, 1fr); column-gap: 10px; }
+  }
+</style>

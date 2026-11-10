@@ -30,12 +30,22 @@ export async function readBodyLimited(request: Request, maxBytes: number): Promi
   return new TextDecoder().decode(bytes);
 }
 
-export async function allowDecode(request: Request): Promise<boolean> {
+async function allow(request: Request, prefix: string): Promise<boolean> {
   const limiter = (env as Record<string, unknown>).DECODE_LIMITER as Limiter | undefined;
   if (!limiter) return true;
   try {
-    return (await limiter.limit({ key: request.headers.get('CF-Connecting-IP') ?? 'unknown' })).success;
+    return (await limiter.limit({ key: prefix + (request.headers.get('CF-Connecting-IP') ?? 'unknown') })).success;
   } catch {
     return true;
   }
+}
+
+export function allowDecode(request: Request): Promise<boolean> {
+  return allow(request, '');
+}
+
+// Certificate checks share the limiter and count separately from decoding, so a class
+// checking codes from one school address doesn't use up its decoder allowance.
+export function allowCertificateCheck(request: Request): Promise<boolean> {
+  return allow(request, 'certificate:');
 }

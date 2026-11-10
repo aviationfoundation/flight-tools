@@ -1,0 +1,249 @@
+---
+export const prerender = false;
+
+import Layout from '../../../layouts/Layout.astro';
+import Certificate from '../../../components/learn/Certificate.astro';
+import { courseBySlug } from '../../../lib/learn/courses';
+import { getAccount, getCertificate, issueCertificate, printedCode, signInUrl, type Certificate as CertificateRecord } from '../../../lib/accounts';
+
+const course = courseBySlug(Astro.params.course ?? '');
+if (!course) return Astro.rewrite('/404');
+const base = `/learn/${course.slug}`;
+const lessonIds = course.lessons.map((lesson) => lesson.id);
+
+Astro.response.headers.set('Cache-Control', 'private, no-store');
+Astro.response.headers.set('X-Robots-Tag', 'noindex');
+
+const state = await getAccount(Astro.request);
+
+let certificate: CertificateRecord | null = null;
+let missing: string[] = [];
+let unavailable = state.status === 'unavailable';
+let formError = '';
+let typedName = '';
+
+if (state.status === 'signed-in') {
+  if (Astro.request.method === 'POST') {
+    // Astro already refuses cross-site form posts; this keeps the rule visible here.
+    if (Astro.request.headers.get('Origin') !== Astro.url.origin) return new Response('Forbidden', { status: 403 });
+    const form = await Astro.request.formData().catch(() => null);
+    typedName = String(form?.get('name') ?? '').slice(0, 200);
+    const result = await issueCertificate(state.token, course.id, typedName, lessonIds);
+    if (result.status === 'issued') return Astro.redirect(`${base}/certificate`, 303);
+    if (result.status === 'signed-out') return Astro.redirect(signInUrl(Astro.url.href), 303);
+    if (result.status === 'incomplete') missing = result.missing;
+    else if (result.status === 'bad-name') formError = 'Enter the name to print, between 2 and 80 characters, with no links.';
+    else formError = 'The certificate couldn\'t be issued just now. Try again in a few minutes.';
+  }
+  const standing = await getCertificate(state.token, course.id, lessonIds);
+  if (!standing) unavailable = true;
+  else {
+    certificate = standing.certificate;
+    if (!missing.length) missing = standing.missing;
+  }
+}
+
+const left = course.lessons.filter((lesson) => missing.includes(lesson.id));
+const accountName = state.status === 'signed-in' && state.account.name !== 'Pilot' ? state.account.name : '';
+const checkUrl = certificate ? new URL(`/learn/certificate/${certificate.code}`, Astro.url).href : '';
+---
+
+<Layout
+  title={`Certificate · ${course.title}`}
+  description={`Certificate of completion for ${course.title}, a free course from aviation.foundation.`}
+  currentPath="/learn"
+  noindex
+>
+  <div class="cp container-site px-site" data-course={course.id} data-signed-in={state.status === 'signed-in' ? '1' : undefined} data-incomplete={left.length ? '1' : undefined}>
+    <p class="cp-back"><a href={base}>{course.title}</a></p>
+
+    {state.status === 'signed-out' ? (
+      <section class="cp-panel">
+        <h1 class="cp-title">Sign in to get your certificate</h1>
+        <p class="cp-text">
+          A certificate is issued to an aviation.foundation account once every lesson of {course.title} is finished.
+          Lessons you finished on this device without an account are saved to it when you sign in.
+        </p>
+        <div class="cp-actions">
+          <a class="btn-solid" href={signInUrl(Astro.url.href, true)}>Create a free account</a>
+          <a class="btn-outline" href={signInUrl(Astro.url.href)}>Sign in</a>
+        </div>
+      </section>
+    ) : unavailable ? (
+      <section class="cp-panel">
+        <h1 class="cp-title">Accounts can't be reached right now</h1>
+        <p class="cp-text">Your progress is safe. Try this page again in a few minutes.</p>
+      </section>
+    ) : certificate && !formError ? (
+      <>
+        <h1 class="sr-only">Your certificate for {course.title}</h1>
+        <div class="cp-sheet"><Certificate certificate={certificate} course={course} /></div>
+
+        <section class="cp-panel cp-use">
+          <div class="cp-use-main">
+            <h2 class="cp-subtitle">Share it</h2>
+            <p class="cp-text">
+              Anyone you give this link or the code <strong class="num">{printedCode(certificate.code)}</strong> can confirm the
+              certificate is real. They see your name as printed, the course and the date, and nothing else.
+            </p>
+            <div class="cp-link">
+              <label class="sr-only" for="cp-link">Link to check this certificate</label>
+              <input id="cp-link" class="num" type="text" readonly value={checkUrl} />
+              <button type="button" class="btn-outline" data-copy={checkUrl}>Copy link</button>
+            </div>
+            <div class="cp-actions">
+              <button type="button" class="btn-solid" data-print>Print or save as PDF</button>
+              <a class="btn-outline" href={course.tool.href}>{course.tool.label}</a>
+            </div>
+          </div>
+          <details class="cp-rename">
+            <summary>Change the name printed on it</summary>
+            <form method="post" class="cp-form">
+              <label for="cp-name-change">Name to print</label>
+              <input id="cp-name-change" name="name" type="text" required minlength="2" maxlength="80" autocomplete="name" value={certificate.name} />
+              <button type="submit" class="btn-outline">Save the name</button>
+            </form>
+            <p class="cp-note">The code stays the same, and the check page shows the new name straight away.</p>
+          </details>
+        </section>
+      </>
+    ) : left.length ? (
+      <section class="cp-panel">
+        <h1 class="cp-title">{left.length === 1 ? 'One lesson to go' : `${left.length} lessons to go`}</h1>
+        <p class="cp-text">The certificate is issued once every lesson of {course.title} is finished.</p>
+        <ol class="cp-left">
+          {left.map((lesson) => (
+            <li><a href={`${base}/${lesson.id}`}>{lesson.title}</a> <span class="num">about {lesson.minutes} min</span></li>
+          ))}
+        </ol>
+      </section>
+    ) : (
+      <section class="cp-panel">
+        <h1 class="cp-title">You finished {course.title}</h1>
+        <p class="cp-text">
+          Type your name the way you want it printed. A first name is enough if you would rather not print your
+          full name. Anyone you give the certificate's code can see this name.
+        </p>
+        <form method="post" class="cp-form">
+          <label for="cp-name">Name to print</label>
+          <input id="cp-name" name="name" type="text" required minlength="2" maxlength="80" autocomplete="name" value={typedName || certificate?.name || accountName} aria-describedby={formError ? 'cp-error' : undefined} />
+          {formError && <p class="cp-error" id="cp-error" role="alert">{formError}</p>}
+          <button type="submit" class="btn-solid">Get my certificate</button>
+        </form>
+      </section>
+    )}
+  </div>
+</Layout>
+
+<style>
+  .cp { padding-top: 40px; padding-bottom: 40px; max-width: 1040px; }
+
+  .cp-back { margin: 0 0 18px; font-size: 14px; }
+  .cp-back a { color: var(--text-muted); }
+  .cp-back a:hover { color: var(--fg); }
+
+  .cp-sheet { max-width: 920px; }
+
+  .cp-panel {
+    max-width: 920px;
+    padding: 26px;
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--fg);
+  }
+
+  .cp-use {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    gap: 32px;
+    margin-top: 24px;
+  }
+
+  .cp-title {
+    margin: 0;
+    font-family: var(--font-archivo);
+    font-size: clamp(26px, 3.4vw, 36px);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.015em;
+  }
+
+  .cp-subtitle { margin: 0; font-family: var(--font-archivo); font-size: 19px; font-weight: 700; }
+
+  .cp-text { margin: 10px 0 0; font-size: 15.5px; line-height: 1.6; max-width: 62ch; }
+
+  .cp-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+
+  .cp-link { display: flex; gap: 8px; margin-top: 14px; }
+
+  .cp-link input, .cp-form input {
+    flex: 1;
+    min-width: 0;
+    padding: 10px 12px;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border-input);
+    border-radius: 0;
+    font-size: 15px;
+  }
+
+  .cp-link input { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 13px; }
+  .cp-link input:focus-visible, .cp-form input:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+
+  .cp-form { display: grid; gap: 8px; justify-items: start; margin-top: 18px; max-width: 420px; }
+  .cp-form label { font-size: 13.5px; font-weight: 600; }
+  .cp-form input { width: 100%; }
+  .cp-form button { margin-top: 6px; }
+
+  .cp-error { margin: 0; font-size: 14px; color: var(--danger); }
+
+  .cp-rename summary { cursor: pointer; font-size: 14.5px; font-weight: 600; }
+  .cp-rename summary:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+  .cp-note { margin: 10px 0 0; font-size: 13px; line-height: 1.5; color: var(--text-muted); }
+
+  .cp-left { margin: 18px 0 0; padding-left: 22px; display: grid; gap: 8px; font-size: 16px; }
+  .cp-left a { color: var(--accent-blue); font-weight: 600; }
+  .cp-left span { font-size: 13px; color: var(--text-muted); }
+
+  @media (max-width: 760px) {
+    .cp-use { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+    .cp-link { flex-direction: column; }
+  }
+
+  @media print {
+    @page { size: landscape; margin: 10mm; }
+    :global(.ft-header), :global(.ft-footer), .cp-back, .cp-panel { display: none !important; }
+    :global(body) { background: #fff; }
+    .cp { padding: 0; max-width: none; }
+    .cp-sheet { max-width: none; }
+    .cp-sheet :global(.cert) { width: 100%; max-height: 100vh; }
+  }
+</style>
+
+<script>
+  import { pendingFor, sendPending } from '../../../lib/learn/pending';
+
+  const page = document.querySelector<HTMLElement>('.cp[data-course]');
+  if (page) {
+    // Lessons finished before signing in are sent first, so the page can count them.
+    if (page.dataset.signedIn === '1' && page.dataset.incomplete === '1' && Object.keys(pendingFor(page.dataset.course!)).length) {
+      sendPending(page.dataset.course!).then((saved) => {
+        if (saved.length) location.reload();
+      });
+    }
+
+    page.querySelector<HTMLButtonElement>('[data-print]')?.addEventListener('click', () => window.print());
+
+    const copy = page.querySelector<HTMLButtonElement>('[data-copy]');
+    copy?.addEventListener('click', async () => {
+      const input = page.querySelector<HTMLInputElement>('#cp-link');
+      try {
+        await navigator.clipboard.writeText(copy.dataset.copy!);
+        copy.textContent = 'Copied';
+      } catch {
+        input?.select();
+        copy.textContent = 'Press Ctrl+C to copy';
+      }
+    });
+  }
+</script>

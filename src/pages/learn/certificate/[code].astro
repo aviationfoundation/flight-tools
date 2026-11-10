@@ -1,0 +1,131 @@
+---
+export const prerender = false;
+
+import Layout from '../../../layouts/Layout.astro';
+import Certificate from '../../../components/learn/Certificate.astro';
+import { checkCertificate, normaliseCertificateCode, printedCode } from '../../../lib/accounts';
+import { courseById } from '../../../lib/learn/courses';
+import { allowCertificateCheck } from '../../../lib/request-limits';
+
+Astro.response.headers.set('Cache-Control', 'private, no-store');
+Astro.response.headers.set('X-Robots-Tag', 'noindex');
+
+const raw = Astro.params.code ?? '';
+const code = normaliseCertificateCode(raw);
+// One address per certificate: a code typed with hyphens or in lower case moves to the plain form.
+if (code && code !== raw) return Astro.redirect(`/learn/certificate/${code}`, 301);
+
+type Outcome = 'valid' | 'not-found' | 'unavailable' | 'slow-down';
+let outcome: Outcome = 'not-found';
+let result: Awaited<ReturnType<typeof checkCertificate>> | null = null;
+
+if (code) {
+  if (!(await allowCertificateCheck(Astro.request))) outcome = 'slow-down';
+  else {
+    result = await checkCertificate(code);
+    outcome = result.status;
+  }
+}
+
+const certificate = result?.status === 'valid' ? result.certificate : null;
+// A certificate for a course this site no longer has can't be shown, so it reads as not found.
+const course = certificate ? courseById(certificate.course) : undefined;
+if (certificate && !course) outcome = 'not-found';
+
+if (outcome === 'not-found') Astro.response.status = 404;
+if (outcome === 'unavailable') Astro.response.status = 503;
+if (outcome === 'slow-down') Astro.response.status = 429;
+---
+
+<Layout
+  title={outcome === 'valid' ? 'Certificate confirmed · aviation.foundation courses' : 'Check a certificate · aviation.foundation courses'}
+  description="Confirmation of a certificate of completion from an aviation.foundation course."
+  currentPath="/learn"
+  noindex
+>
+  <div class="cc container-site px-site">
+    {outcome === 'valid' && certificate && course ? (
+      <>
+        <header class="cc-head">
+          <p class="cc-status">Confirmed</p>
+          <h1 class="cc-title">This certificate is real</h1>
+          <p class="cc-text">
+            aviation.foundation issued certificate <strong class="num">{printedCode(certificate.code)}</strong> to
+            <strong>{certificate.name}</strong> for finishing every lesson of <a href={`/learn/${course.slug}`}>{course.title}</a>.
+            Check that the name and the code match the copy you were given.
+          </p>
+        </header>
+        <div class="cc-sheet"><Certificate certificate={certificate} course={course} /></div>
+        <section class="cc-means">
+          <h2 class="cc-subtitle">What it means</h2>
+          <p class="cc-text">
+            The learner opened all {certificate.lessons} lessons and answered every question in them, on an account under
+            the name shown. The lessons and questions are public, and you can <a href={`/learn/${course.slug}`}>read the course</a>.
+            The questions are answered unsupervised, so treat the certificate as a record of completion. It is not a
+            licence, a rating, a school credit or a Transport Canada qualification.
+          </p>
+        </section>
+      </>
+    ) : (
+      <section class="cc-panel">
+        <h1 class="cc-title">
+          {outcome === 'unavailable' ? 'Certificates can\'t be checked right now' : outcome === 'slow-down' ? 'Too many checks from this address' : 'No certificate has this code'}
+        </h1>
+        <p class="cc-text">
+          {outcome === 'unavailable'
+            ? 'The record couldn\'t be reached. This says nothing about the certificate. Try again in a few minutes.'
+            : outcome === 'slow-down'
+              ? 'Wait a minute and try again.'
+              : 'Check the code against the certificate: 12 letters and digits in three groups of four, never containing 0, 1, I, L, O or U. If it still isn\'t found, the certificate was not issued by aviation.foundation.'}
+        </p>
+        <p class="cc-actions"><a class="btn-solid" href="/learn/certificate">Check another code</a></p>
+      </section>
+    )}
+  </div>
+</Layout>
+
+<style>
+  .cc { padding-top: 48px; padding-bottom: 40px; max-width: 1040px; }
+
+  .cc-head { max-width: 920px; margin-bottom: 28px; }
+
+  .cc-status {
+    display: inline-block;
+    margin: 0 0 12px;
+    padding: 4px 10px;
+    background: var(--success-bg);
+    color: var(--success);
+    border: 1px solid var(--success-border);
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+  }
+
+  .cc-title {
+    margin: 0;
+    font-family: var(--font-archivo);
+    font-size: clamp(30px, 4.4vw, 48px);
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.015em;
+  }
+
+  .cc-subtitle { margin: 0; font-family: var(--font-archivo); font-size: 19px; font-weight: 700; }
+
+  .cc-text { margin: 12px 0 0; font-size: 16px; line-height: 1.6; max-width: 66ch; }
+  .cc-text a { color: var(--accent-blue); font-weight: 600; }
+
+  .cc-sheet { max-width: 920px; }
+  .cc-means { max-width: 920px; margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border-strong); }
+
+  .cc-panel {
+    max-width: 620px;
+    padding: 26px;
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--fg);
+  }
+
+  .cc-actions { margin: 20px 0 0; }
+</style>

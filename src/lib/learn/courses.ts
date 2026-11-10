@@ -1,5 +1,6 @@
 import { COURSE_ID as NOTAM_COURSE_ID, LESSONS as NOTAM_LESSONS } from './course.ts';
 import { METAR_COURSE_ID, METAR_LESSONS } from './metar-course.ts';
+import { PATHWAY_COURSE_ID, PATHWAY_LESSONS } from './pathway-course.ts';
 import type { Lesson } from './types.ts';
 
 export interface Course {
@@ -14,6 +15,14 @@ export interface Course {
   note: string;
   showcaseLabel: string;
   tool: { href: string; label: string };
+  // Which list on /learn the course sits in: for people deciding whether to train, or for pilots.
+  audience: 'starting' | 'pilots';
+  // What going through the last lesson again is called, once the course is finished.
+  again: string;
+  // What the course is on, to finish the certificate's sentence "a course on …".
+  subject: string;
+  // Lessons open without an account. Signing in is still what saves scores and issues the certificate.
+  open?: boolean;
   lessons: Lesson[];
 }
 
@@ -28,6 +37,9 @@ export const COURSES: Course[] = [
     note: 'Every NOTAM in the course is made up for practice, though the airports are real. Before a real flight, get an official briefing.',
     showcaseLabel: 'From lesson 1: one NOTAM, taken apart',
     tool: { href: '/tools/notam', label: 'Decode a real briefing' },
+    audience: 'pilots',
+    again: 'Brief the practice flight again',
+    subject: 'reading NOTAMs before a flight',
     lessons: NOTAM_LESSONS,
   },
   {
@@ -40,9 +52,32 @@ export const COURSES: Course[] = [
     note: 'Every report in the course is made up for practice, though the airports are real. Before a real flight, get an official briefing.',
     showcaseLabel: 'From lesson 1: one METAR, taken apart',
     tool: { href: '/tools/metar', label: 'Decode a live report' },
+    audience: 'pilots',
+    again: 'Brief the practice flight again',
+    subject: 'reading METAR weather reports and TAF forecasts',
     lessons: METAR_LESSONS,
   },
+  {
+    id: PATHWAY_COURSE_ID,
+    slug: 'flight-plan',
+    title: 'Flight Plan',
+    description: 'Eight short lessons on getting into aviation from a Canadian high school: the careers, the pilot licences in order, the medical, reading a cost sheet, paying for training, comparing programs and a Grade 10 to 12 timeline.',
+    lead: 'This is an eight-lesson course on getting into aviation from a Canadian high school. It covers the careers, the pilot licences in order, the medical, how to read what a program costs, how training is paid for, and what to do in each grade before your first application.',
+    who: 'The material is written for students in Grades 10 to 12 and for the parents and counsellors helping them. It needs no flying experience and takes about 45 minutes. Each lesson ends with questions and the official sources.',
+    note: 'Every person, school and price used as an example is made up. The requirements come from Transport Canada and other official sources, linked at the end of each lesson. Check the current version before you act on a date or a fee.',
+    showcaseLabel: 'From lesson 1: the pilot route, in order',
+    tool: { href: 'https://aviation.foundation/programs', label: 'Compare programs' },
+    audience: 'starting',
+    again: 'Go through the planning drill again',
+    subject: 'getting into aviation from a Canadian high school',
+    open: true,
+    lessons: PATHWAY_LESSONS,
+  },
 ];
+
+// Addresses under /learn that are pages of their own, so no course may use them as a slug
+// and no lesson may use them as an id.
+export const RESERVED_SLUGS = ['certificate'];
 
 export function courseBySlug(slug: string): Course | undefined {
   return COURSES.find((course) => course.slug === slug);

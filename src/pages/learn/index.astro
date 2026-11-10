@@ -16,43 +16,58 @@ const progress = await Promise.all(
     return rows.filter((row) => ids.has(row.lesson)).length;
   }),
 );
+
+// COURSES keeps its order for old links and saved scores. The page lists by who a course is for.
+const groups = [
+  { title: 'Before you start training', note: 'For students deciding whether and how to get into aviation, and for the parents and counsellors helping them. Open to everyone, no account needed.', audience: 'starting' },
+  { title: 'For student and private pilots', note: 'Free with an aviation.foundation account, which saves your progress.', audience: 'pilots' },
+] as const;
 ---
 
 <Layout
   title="Courses · aviation.foundation flight tools"
-  description="Free short courses for student and private pilots: reading NOTAMs, and reading METARs and TAFs."
+  description="Free short courses from aviation.foundation: getting into aviation from a Canadian high school, reading NOTAMs, and reading METARs and TAFs."
   currentPath="/learn"
 >
   <div class="lc container-site px-site">
     <header class="lc-header">
       <h1 class="lc-title">Courses</h1>
       <p class="lc-lead">
-        Short lessons for student and private pilots, each ending with practice questions. Free with an
-        aviation.foundation account, which saves your progress.
+        Short lessons, each ending with practice questions. Every course is free, and finishing one earns a
+        certificate of completion.
       </p>
     </header>
 
-    <ol class="lc-list">
-      {COURSES.map((course, i) => {
-        const finished = progress[i];
-        const count = course.lessons.length;
-        return (
-          <li>
-            <a href={`/learn/${course.slug}`} class={finished === count ? 'is-done' : ''}>
-              <span class="lc-body">
-                <span class="lc-name">{course.title}</span>
-                <span class="lc-desc">{course.description}</span>
-              </span>
-              <span class="lc-meta num">
-                {state.status === 'signed-in' && finished > 0
-                  ? `${finished} of ${count} done`
-                  : `${count} lessons, about ${totalMinutes(course)} min`}
-              </span>
-            </a>
-          </li>
-        );
-      })}
-    </ol>
+    {groups.map((group) => (
+      <section class="lc-group" aria-labelledby={`lc-${group.audience}`}>
+        <h2 class="lc-group-title" id={`lc-${group.audience}`}>{group.title}</h2>
+        <p class="lc-group-note">{group.note}</p>
+        <ol class="lc-list">
+          {COURSES.map((course, i) => {
+            if (course.audience !== group.audience) return null;
+            const finished = progress[i];
+            const count = course.lessons.length;
+            return (
+              <li>
+                <a href={`/learn/${course.slug}`} class={finished === count ? 'is-done' : ''}>
+                  <span class="lc-body">
+                    <span class="lc-name">{course.title}</span>
+                    <span class="lc-desc">{course.description}</span>
+                  </span>
+                  <span class="lc-meta num">
+                    {state.status === 'signed-in' && finished > 0
+                      ? `${finished} of ${count} done`
+                      : `${count} lessons, about ${totalMinutes(course)} min`}
+                  </span>
+                </a>
+              </li>
+            );
+          })}
+        </ol>
+      </section>
+    ))}
+
+    <p class="lc-verify"><a href="/learn/certificate">Check a certificate</a></p>
   </div>
 </Layout>
 
@@ -76,12 +91,29 @@ const progress = await Promise.all(
     max-width: 34em;
   }
 
+  .lc-group { margin-top: 48px; }
+
+  .lc-group-title {
+    margin: 0;
+    font-family: var(--font-archivo);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .lc-group-note { margin: 6px 0 0; font-size: 14.5px; line-height: 1.5; color: var(--text-muted); max-width: 66ch; }
+
   .lc-list {
     list-style: none;
-    margin: 48px 0 0;
+    margin: 16px 0 0;
     padding: 0;
     border-top: 1px solid var(--border-strong);
   }
+
+  .lc-verify { margin: 32px 0 0; font-size: 14px; }
+  .lc-verify a { color: var(--text-muted); }
+  .lc-verify a:hover { color: var(--fg); }
 
   .lc-list a {
     display: grid;

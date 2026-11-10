@@ -7,10 +7,12 @@ import Check from '../../../components/learn/Check.astro';
 import Triage from '../../../components/learn/Triage.astro';
 import Timeline from '../../../components/learn/Timeline.astro';
 import LessonRail from '../../../components/learn/LessonRail.astro';
+import Route from '../../../components/learn/Route.astro';
+import Links from '../../../components/learn/Links.astro';
 import SignInGate from '../../../components/learn/SignInGate.astro';
 import { courseBySlug, lessonIn } from '../../../lib/learn/courses';
 import { checkCount } from '../../../lib/learn/types';
-import { getAccount, getProgress, type LessonProgress } from '../../../lib/accounts';
+import { getAccount, getProgress, signInUrl, type LessonProgress } from '../../../lib/accounts';
 
 const course = courseBySlug(Astro.params.course ?? '');
 if (!course) return Astro.rewrite('/404');
@@ -23,6 +25,9 @@ const lesson = lessonIn(course, Astro.params.lesson ?? '');
 if (!lesson) Astro.response.status = 404;
 
 const state = lesson ? await getAccount(Astro.request) : { status: 'signed-out' as const };
+const signedIn = state.status === 'signed-in';
+// An open course can be taken without an account, and when accounts can't be reached.
+const canTake = signedIn || course.open === true;
 const progress: LessonProgress[] = state.status === 'signed-in' ? (await getProgress(state.token, course.id)) ?? [] : [];
 const index = lesson ? LESSONS.indexOf(lesson) : -1;
 const previous = index > 0 ? LESSONS[index - 1] : null;
@@ -56,16 +61,25 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
         data-course={course.id}
         data-lesson={lesson.id}
         data-total={total}
-        data-signed-in={state.status === 'signed-in' ? '1' : undefined}
+        data-active={canTake ? '1' : undefined}
+        data-signed-in={signedIn ? '1' : undefined}
       >
         <p class="lp-position">Lesson {index + 1} of {LESSONS.length}, about {lesson.minutes} minutes</p>
         <h1 class="lp-title">{lesson.title}</h1>
         <p class="lp-summary">{lesson.summary}</p>
 
-        {state.status !== 'signed-in' ? (
-          <SignInGate status={state.status} returnTo={Astro.url.href} />
+        {!canTake ? (
+          <SignInGate status={state.status === 'unavailable' ? 'unavailable' : 'signed-out'} returnTo={Astro.url.href} />
         ) : (
           <>
+            {!signedIn && (
+              <p class="lp-open">
+                {state.status === 'unavailable'
+                  ? 'Accounts can\'t be reached right now. You can still take the lesson, and your score is kept on this device.'
+                  : <>No account needed. <a href={signInUrl(Astro.url.href)}>Sign in</a> or <a href={signInUrl(Astro.url.href, true)}>create a free account</a> to save your scores and get the certificate.</>}
+              </p>
+            )}
+
             {done && (
               <p class="lp-before">
                 You finished this lesson before, with {done.correct} of {done.total} right first time. Going through it again keeps your best score.
@@ -85,7 +99,7 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
                   <NotamFigure raw={block.raw} marks={block.marks} caption={block.caption} id={`${lesson.id}-f${position}`} />
                 ) : block.kind === 'table' ? (
                   <div class="lp-table-wrap">
-                    <table class="lp-table">
+                    <table class={`lp-table${block.prose ? ' is-prose' : ''}`}>
                       <thead><tr>{block.head.map((h) => <th scope="col">{h}</th>)}</tr></thead>
                       <tbody>
                         {block.rows.map((row) => (
@@ -103,6 +117,10 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
                   <Timeline caption={block.caption} window={block.window} offsetHours={block.offsetHours} localLabel={block.localLabel} />
                 ) : block.kind === 'triage' ? (
                   <Triage block={block} />
+                ) : block.kind === 'route' ? (
+                  <Route stops={block.stops} caption={block.caption} />
+                ) : block.kind === 'links' ? (
+                  <Links title={block.title} items={block.items} />
                 ) : (
                   <Check check={block} number={number} />
                 ),
@@ -117,12 +135,16 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
               <p class="lp-done-title">Lesson complete</p>
               <p class="lp-done-score" data-score></p>
               <p class="lp-done-save" data-save></p>
+              <p class="lp-done-save" data-keep hidden>
+                <a href={signInUrl(new URL(base, Astro.url).href, true)}>Create a free account</a> or <a href={signInUrl(new URL(base, Astro.url).href)}>sign in</a> to keep your scores and get the certificate.
+              </p>
               <div class="lp-done-actions">
                 {next ? (
                   <a class="btn-solid" href={`${base}/${next.id}`}>Next: {next.title}</a>
                 ) : (
-                  <a class="btn-solid" href={course.tool.href}>{course.tool.label}</a>
+                  <a class="btn-solid" href={`${base}/certificate`}>Get your certificate</a>
                 )}
+                {!next && <a class="btn-outline" href={course.tool.href}>{course.tool.label}</a>}
                 <a class="btn-outline" href={base}>All lessons</a>
               </div>
             </section>
@@ -181,6 +203,17 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
     font-size: 14px;
   }
 
+  .lp-open {
+    margin: 24px 0 0;
+    padding: 10px 14px;
+    background: var(--surface-subtle);
+    border-left: 3px solid var(--accent-blue);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .lp-open a { color: var(--accent-blue); font-weight: 600; }
+
   .lp-body { margin-top: 32px; }
 
   .lp-p {
@@ -219,6 +252,13 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
     font-size: 13.5px;
     font-weight: 600;
     white-space: nowrap;
+  }
+
+  .lp-table.is-prose tbody th {
+    font-family: var(--font-sans);
+    font-size: 14.5px;
+    white-space: normal;
+    min-width: 8.5em;
   }
 
   .lp-notice {
@@ -286,6 +326,8 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
 
   .lp-done-score { margin: 8px 0 0; font-size: 16px; }
   .lp-done-save { margin: 4px 0 0; font-size: 13.5px; opacity: 0.8; }
+  .lp-done-save a { color: inherit; font-weight: 600; }
+  .lp-done-save[data-keep] { opacity: 1; }
 
   .lp-done-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
   .lp-done .btn-solid { background: var(--bg); color: var(--fg); }
@@ -325,15 +367,25 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
 
 <script>
   import { normaliseAnswer } from '../../../lib/learn/answer';
+  import { keepPending, pendingFor, sendPending } from '../../../lib/learn/pending';
 
-  const root = document.querySelector<HTMLElement>('[data-lesson][data-signed-in]');
+  const root = document.querySelector<HTMLElement>('[data-lesson][data-active]');
   if (root) setup(root);
 
   function setup(article: HTMLElement) {
     const course = article.dataset.course!;
     const lesson = article.dataset.lesson!;
     const total = Number(article.dataset.total);
+    const signedIn = article.dataset.signedIn === '1';
     const outcome = new Map<string, boolean>();
+
+    const markRail = (id: string) => document.querySelector(`[data-rail-lesson="${id}"]`)?.classList.add('is-done');
+    const notSaved = 'This score couldn\'t be saved just now. It is kept on this device and will be sent the next time you open the course signed in.';
+
+    // Lessons finished in this browser without an account show as done, and are sent to the
+    // account as soon as a signed-in page loads.
+    if (signedIn) sendPending(course).then((saved) => saved.forEach(markRail));
+    else Object.keys(pendingFor(course)).forEach(markRail);
 
     function record(key: string, right: boolean) {
       if (!outcome.has(key)) outcome.set(key, right);
@@ -350,8 +402,16 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
       const panel = article.querySelector<HTMLElement>('[data-done]')!;
       panel.querySelector('[data-score]')!.textContent = `You got ${correct} of ${total} right first time.`;
       const save = panel.querySelector<HTMLElement>('[data-save]')!;
-      save.textContent = 'Saving to your account…';
       panel.hidden = false;
+      if (!signedIn) {
+        keepPending(course, lesson, { correct, total });
+        save.textContent = 'Kept on this device.';
+        panel.querySelector<HTMLElement>('[data-keep]')!.hidden = false;
+        markRail(lesson);
+        save.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+        return;
+      }
+      save.textContent = 'Saving to your account…';
       save.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
       fetch('/api/learn/progress', {
         method: 'POST',
@@ -361,15 +421,17 @@ const numbered = (lesson?.blocks ?? []).map((block, position) => {
         .then(async (response) => {
           if (response.ok) {
             save.textContent = 'Saved to your account.';
-            document.querySelector(`[data-rail-lesson="${lesson}"]`)?.classList.add('is-done');
-          } else if (response.status === 401) {
-            save.textContent = 'Your sign-in has expired, so this score wasn\'t saved. Sign in again and repeat the lesson to save it.';
-          } else {
-            save.textContent = 'This score couldn\'t be saved just now. Your answers still count; repeat the lesson later to save it.';
+            markRail(lesson);
+            return;
           }
+          keepPending(course, lesson, { correct, total });
+          save.textContent = response.status === 401
+            ? 'Your sign-in has expired. This score is kept on this device and will be sent when you sign in again and open the course.'
+            : notSaved;
         })
         .catch(() => {
-          save.textContent = 'This score couldn\'t be saved just now. Your answers still count; repeat the lesson later to save it.';
+          keepPending(course, lesson, { correct, total });
+          save.textContent = notSaved;
         });
     }
 

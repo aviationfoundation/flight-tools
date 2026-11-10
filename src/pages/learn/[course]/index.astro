@@ -3,6 +3,7 @@ export const prerender = false;
 
 import Layout from '../../../layouts/Layout.astro';
 import NotamFigure from '../../../components/learn/NotamFigure.astro';
+import Route from '../../../components/learn/Route.astro';
 import { COURSES, courseBySlug, lessonIn, totalMinutes } from '../../../lib/learn/courses';
 import { getAccount, getProgress, signInUrl, type LessonProgress } from '../../../lib/accounts';
 
@@ -25,7 +26,8 @@ const nextLesson = LESSONS.find((l) => !done.has(l.id));
 const minutes = totalMinutes(course);
 const base = `/learn/${course.slug}`;
 
-const showcase = LESSONS[0].blocks.find((b) => b.kind === 'notam' || b.kind === 'report');
+const showcase = LESSONS[0].blocks.find((b) => b.kind === 'notam' || b.kind === 'report' || b.kind === 'route');
+const signedIn = state.status === 'signed-in';
 ---
 
 <Layout
@@ -33,7 +35,7 @@ const showcase = LESSONS[0].blocks.find((b) => b.kind === 'notam' || b.kind === 
   description={course.description}
   currentPath="/learn"
 >
-  <div class="lo container-site px-site">
+  <div class="lo container-site px-site" data-course={course.id} data-signed-in={signedIn ? '1' : undefined} data-open={course.open ? '1' : undefined}>
     <header class="lo-hero">
       <div class="lo-intro">
         <p class="lo-back"><a href="/learn">All courses</a></p>
@@ -53,10 +55,23 @@ const showcase = LESSONS[0].blocks.find((b) => b.kind === 'notam' || b.kind === 
                 </a>
               ) : (
                 <div class="lo-account-actions">
-                  <a class="btn-solid" href={course.tool.href}>{course.tool.label}</a>
-                  <a class="btn-outline" href={`${base}/${LESSONS[LESSONS.length - 1].id}`}>Brief the practice flight again</a>
+                  <a class="btn-solid" href={`${base}/certificate`}>Get your certificate</a>
+                  <a class="btn-outline" href={course.tool.href}>{course.tool.label}</a>
+                  <a class="btn-outline" href={`${base}/${LESSONS[LESSONS.length - 1].id}`}>{course.again}</a>
                 </div>
               )}
+            </>
+          ) : course.open ? (
+            <>
+              <p class="lo-account-line" data-local-line>
+                {state.status === 'unavailable'
+                  ? 'Accounts can\'t be reached right now. The lessons still open, and your scores are kept on this device.'
+                  : 'Open to everyone, no account needed. A free aviation.foundation account saves your scores and gives you a certificate of completion.'}
+              </p>
+              <div class="lo-account-actions">
+                <a class="btn-solid" href={`${base}/${LESSONS[0].id}`} data-local-start>Start the first lesson</a>
+                {state.status !== 'unavailable' && <a class="btn-outline" href={signInUrl(Astro.url.href)}>Sign in</a>}
+              </div>
             </>
           ) : state.status === 'unavailable' ? (
             <p class="lo-account-line">Accounts can't be reached right now, so lessons won't open. Try again in a few minutes.</p>
@@ -81,6 +96,12 @@ const showcase = LESSONS[0].blocks.find((b) => b.kind === 'notam' || b.kind === 
           <NotamFigure raw={showcase.raw} marks={showcase.marks} id="lo-showcase" />
         </div>
       )}
+      {showcase && showcase.kind === 'route' && (
+        <div class="lo-showcase">
+          <p class="lo-showcase-label">{course.showcaseLabel}</p>
+          <Route stops={showcase.stops} />
+        </div>
+      )}
     </header>
 
     <section class="lo-lessons" aria-labelledby="lo-lessons-title">
@@ -89,7 +110,7 @@ const showcase = LESSONS[0].blocks.find((b) => b.kind === 'notam' || b.kind === 
         {LESSONS.map((lesson, i) => {
           const record = done.get(lesson.id);
           return (
-            <li class={record ? 'is-done' : ''}>
+            <li class={record ? 'is-done' : ''} data-lesson={lesson.id} data-number={i + 1}>
               <a href={`${base}/${lesson.id}`}>
                 <span class="lo-num num" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
                 <span class="lo-body">
@@ -110,6 +131,45 @@ const showcase = LESSONS[0].blocks.find((b) => b.kind === 'notam' || b.kind === 
     </section>
   </div>
 </Layout>
+
+<script>
+  import { pendingFor, sendPending } from '../../../lib/learn/pending';
+
+  const page = document.querySelector<HTMLElement>('.lo[data-course]');
+  if (page) {
+    const course = page.dataset.course!;
+    const waiting = pendingFor(course);
+    const ids = Object.keys(waiting);
+    if (ids.length && page.dataset.signedIn === '1') {
+      // Scores earned before signing in go to the account, then the page shows them.
+      sendPending(course).then((saved) => {
+        if (saved.length) location.reload();
+      });
+    } else if (ids.length && page.dataset.open === '1') {
+      let next: HTMLElement | null = null;
+      page.querySelectorAll<HTMLElement>('[data-lesson]').forEach((item) => {
+        const score = waiting[item.dataset.lesson!];
+        if (!score) {
+          next ??= item;
+          return;
+        }
+        item.classList.add('is-done');
+        const meta = item.querySelector('.lo-meta');
+        if (meta) meta.textContent = `Done, ${score.correct}/${score.total}`;
+      });
+      const line = page.querySelector<HTMLElement>('[data-local-line]');
+      if (line) line.textContent = `${ids.length} ${ids.length === 1 ? 'lesson is' : 'lessons are'} done on this device. Sign in or create a free account to save ${ids.length === 1 ? 'it' : 'them'} and get the certificate.`;
+      const start = page.querySelector<HTMLAnchorElement>('[data-local-start]');
+      const target = next as HTMLElement | null;
+      if (start && target) {
+        start.href = target.querySelector('a')!.href;
+        start.textContent = `Continue with lesson ${target.dataset.number}`;
+      } else if (start) {
+        start.textContent = 'Go through the lessons again';
+      }
+    }
+  }
+</script>
 
 <style>
   .lo { padding-top: 56px; padding-bottom: 40px; }
@@ -163,6 +223,8 @@ const showcase = LESSONS[0].blocks.find((b) => b.kind === 'notam' || b.kind === 
   .lo-account-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
   .lo-showcase { padding-top: 10px; }
+
+  .lo-showcase :global(.rt) { margin-top: 22px; }
 
   .lo-showcase-label {
     margin: 0 0 -14px;

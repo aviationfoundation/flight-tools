@@ -1,6 +1,6 @@
 export { normaliseAnswer } from './answer.ts';
 
-export type { Block, DrillMap, Lesson, Mark, Option, TriageItem, TriageLabels } from './types.ts';
+export type { Block, DrillMap, Lesson, LinkItem, Mark, Option, RouteStop, TriageItem, TriageLabels } from './types.ts';
 export { checkCount } from './types.ts';
 import type { Lesson } from './types.ts';
 

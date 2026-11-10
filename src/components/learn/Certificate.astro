@@ -1,0 +1,210 @@
+---
+import type { Certificate } from '../../lib/accounts';
+import { printedCode } from '../../lib/accounts';
+import { totalMinutes, type Course } from '../../lib/learn/courses';
+
+interface Props {
+  certificate: Certificate;
+  course: Course;
+}
+
+const { certificate, course } = Astro.props;
+
+// Dates are shown for Vancouver, where the society is, so a lesson finished in the evening
+// doesn't print tomorrow's date.
+function longDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/Vancouver' });
+}
+
+const minutes = Math.round(totalMinutes(course) / 5) * 5;
+---
+
+<article class="cert" aria-label={`Certificate of completion for ${certificate.name}`}>
+  <header class="cert-head">
+    <p class="cert-org">
+      <img src="/favicon.svg" alt="" width="22" height="22" />
+      <span>Open Aviation Foundation</span>
+    </p>
+    <p class="cert-kind">Certificate of completion</p>
+  </header>
+
+  <div class="cert-main">
+    <p class="cert-pre">This certifies that</p>
+    <p class="cert-name">{certificate.name}</p>
+    <p class="cert-pre">finished every lesson of</p>
+    <p class="cert-course">{course.title}</p>
+    <p class="cert-about">
+      A course of {certificate.lessons} lessons, about {minutes} minutes, on {course.subject}.
+      {certificate.correct} of its {certificate.total} questions were answered correctly at the first attempt.
+    </p>
+  </div>
+
+  <dl class="cert-strip">
+    <div>
+      <dt>Certificate</dt>
+      <dd class="cert-code">{printedCode(certificate.code)}</dd>
+    </div>
+    <div>
+      <dt>Completed</dt>
+      <dd>{longDate(certificate.completedAt)}</dd>
+    </div>
+    <div>
+      <dt>Issued by</dt>
+      <dd>aviation.foundation</dd>
+    </div>
+    <div>
+      <dt>Check it at</dt>
+      <dd class="cert-url">tools.aviation.foundation/learn/certificate</dd>
+    </div>
+  </dl>
+
+  <p class="cert-fine">
+    This records that the lessons were finished and the questions answered. It is not a licence, a rating, a
+    school credit or a Transport Canada qualification.
+  </p>
+</article>
+
+<style>
+  /* A certificate is a sheet of paper: it keeps its light colours in dark mode and in print. */
+  .cert {
+    --c-ink: #111111;
+    --c-paper: #FBFAF8;
+    --c-muted: #5A5F66;
+    --c-line: #DCD8D0;
+    --c-blue: #00396E;
+    container-type: inline-size;
+    display: grid;
+    grid-template-rows: auto 1fr auto auto;
+    aspect-ratio: 1.414 / 1;
+    padding: clamp(20px, 3.6vw, 44px);
+    background: var(--c-paper);
+    color: var(--c-ink);
+    border: 1px solid var(--c-ink);
+    outline: 1px solid var(--c-ink);
+    outline-offset: -7px;
+    font-family: var(--font-sans);
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .cert p { margin: 0; }
+
+  .cert-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+    padding-bottom: clamp(10px, 2cqw, 18px);
+    border-bottom: 3px solid var(--c-ink);
+  }
+
+  .cert-org {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--font-archivo);
+    font-size: clamp(13px, 2cqw, 17px);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  .cert-org img { display: block; }
+
+  .cert-kind {
+    font-size: clamp(10.5px, 1.5cqw, 13px);
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--c-blue);
+    text-align: right;
+  }
+
+  .cert-main {
+    display: grid;
+    align-content: center;
+    gap: clamp(4px, 1cqw, 9px);
+    padding: clamp(12px, 3cqw, 28px) 0;
+  }
+
+  .cert-pre { font-size: clamp(12px, 1.8cqw, 15.5px); color: var(--c-muted); }
+
+  .cert-name {
+    font-family: var(--font-serif);
+    font-size: clamp(26px, 6.2cqw, 58px);
+    font-weight: 600;
+    line-height: 1.08;
+    letter-spacing: -0.015em;
+    overflow-wrap: anywhere;
+  }
+
+  .cert-course {
+    font-family: var(--font-archivo);
+    font-size: clamp(22px, 4.6cqw, 42px);
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.015em;
+  }
+
+  .cert-about {
+    max-width: 64ch;
+    padding-top: clamp(4px, 1cqw, 10px);
+    font-family: var(--font-serif);
+    font-size: clamp(12.5px, 1.9cqw, 16.5px);
+    line-height: 1.5;
+  }
+
+  /* The record, set out in cells like a flight progress strip. */
+  .cert-strip {
+    display: grid;
+    grid-template-columns: 1.05fr 1fr 1fr 1.9fr;
+    margin: 0;
+    border: 1px solid var(--c-ink);
+  }
+
+  .cert-strip div {
+    min-width: 0;
+    padding: clamp(6px, 1.3cqw, 11px) clamp(8px, 1.6cqw, 14px);
+    border-left: 1px solid var(--c-ink);
+  }
+
+  .cert-strip div:first-child { border-left: 0; }
+
+  .cert-strip dt {
+    font-size: clamp(9px, 1.2cqw, 10.5px);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--c-muted);
+  }
+
+  .cert-strip dd {
+    margin: 3px 0 0;
+    font-size: clamp(11px, 1.65cqw, 14.5px);
+    font-weight: 600;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+
+  .cert-code, .cert-url { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+  .cert-code { letter-spacing: 0.03em; white-space: nowrap; }
+
+  .cert-fine {
+    padding-top: clamp(8px, 1.5cqw, 13px);
+    font-size: clamp(9.5px, 1.3cqw, 11.5px);
+    line-height: 1.45;
+    color: var(--c-muted);
+  }
+
+  /* Narrow screens: a tall sheet reads better than a tiny wide one. */
+  @container (max-width: 520px) {
+    .cert-strip { grid-template-columns: 1fr 1fr; }
+    .cert-strip div:nth-child(3) { border-left: 0; }
+    .cert-strip div:nth-child(n + 3) { border-top: 1px solid var(--c-ink); }
+  }
+
+  @media (max-width: 600px) {
+    .cert { aspect-ratio: auto; min-height: 430px; }
+  }
+</style>
