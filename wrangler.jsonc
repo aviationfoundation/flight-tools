@@ -8,8 +8,8 @@
   "r2_buckets": [{ "binding": "DATA", "bucket_name": "flight-tools-data" }],
   "services": [{ "binding": "ACCOUNTS", "service": "aviation-foundation" }],
   "ratelimits": [{ "name": "DECODE_LIMITER", "namespace_id": "20261028", "simple": { "limit": 30, "period": 60 } }]
-  // The five-minute data refresh (src/worker.ts `scheduled`, src/lib/refresh-data.ts) needs
-  // "triggers": { "crons": ["*/5 * * * *"] } here, but the account is on Workers Free: all five
-  // cron slots are taken and a run needs ~20-30 ms of CPU against the 10 ms cap. Add it back
-  // once the account is on Workers Paid.
+  // The five-minute data refresh runs pipeline/build_data.py on a server timer (see README).
+  // The Worker's own copy (src/worker.ts `scheduled`, src/lib/refresh-data.ts) would need
+  // "triggers": { "crons": ["*/5 * * * *"] } here, which Workers Free cannot take: all five
+  // cron slots are used and a run needs ~20-30 ms of CPU against the 10 ms cap.
 }
