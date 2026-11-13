@@ -11,11 +11,9 @@ interface Props {
 
 const { title = 'Flight tools', description = 'Free flight-planning tools.', currentPath = Astro.url.pathname, noindex = false } = Astro.props;
 
-// The tools also run on aviation.foundation/tools, which is the copy search
-// engines and ads point at. Courses only live here, so they keep their own URL.
-const MIRRORED = new Set(['/tools', '/tools/metar', '/tools/notam', '/tools/e6b', '/tools/weight-balance', '/tools/takeoff-landing-distance']);
+// This is the only copy of the tools: aviation.foundation/tools and its tool pages 301 here.
 const path = Astro.url.pathname.replace(/\/+$/, '') || '/';
-const canonical = MIRRORED.has(path) ? `https://aviation.foundation${path}` : `https://tools.aviation.foundation${path}`;
+const canonical = `https://tools.aviation.foundation${path}`;
 
 const tools = [
   { href: '/tools/metar', label: 'METAR & TAF' },

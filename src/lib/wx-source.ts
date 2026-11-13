@@ -1,5 +1,5 @@
 const BASE = 'https://aviationweather.gov/api/data';
-const USER_AGENT = 'aviation.foundation METAR decoder (+https://aviation.foundation/tools/metar)';
+const USER_AGENT = 'aviation.foundation METAR decoder (+https://tools.aviation.foundation/tools/metar)';
 const CACHE_SECONDS = 240;
 const TIMEOUT_MS = 8000;
 
