@@ -99,9 +99,10 @@ def build_categories():
             base = parse_number(row[bi])
             if cover in CEILING_COVERS and base is not None:
                 ceilings.append(int(base))
+        # vert_vis_ft holds the METAR's VV digits, hundreds of feet: VV002 arrives as 2, not 200.
         vert = parse_number(row[col["vert_vis_ft"]])
         if vert is not None:
-            ceilings.append(int(vert))
+            ceilings.append(int(vert * 100))
         ceiling = min(ceilings) if ceilings else None
         category = flight_category(vis, ceiling, has_clouds)
         if category is None:

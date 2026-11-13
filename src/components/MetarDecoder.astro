@@ -2301,6 +2301,7 @@ const faqItems = [
 
 <script>
   import { windComponents } from '../lib/metar-compute';
+  import { formatAge } from '../lib/categories';
 
   let ageTimer: number | undefined;
 
@@ -2317,12 +2318,7 @@ const faqItems = [
       const tick = () => {
         const minutes = Math.floor((Date.now() - observed.getTime()) / 60000);
         const stale = minutes > 90;
-        const text =
-          minutes < 1
-            ? 'just now'
-            : minutes < 60
-              ? `${minutes} min ago`
-              : `${Math.floor(minutes / 60)} h ${minutes % 60} min ago`;
+        const text = formatAge(Date.now() - observed.getTime());
         ageEl.textContent = `· ${text}${stale ? ' · older than the hourly cycle' : ''}`;
         ageEl.classList.toggle('is-stale', stale);
         ageEl.title = observed.toLocaleString();

@@ -26,7 +26,7 @@ Deploys to Cloudflare Workers with `npm run deploy` (needs `wrangler login` firs
 
 The METAR page fetches live reports from aviationweather.gov. Everything else it shows, the station map, airport search and runway headings, comes from files built by `pipeline/build_data.py` and stored in Cloudflare R2:
 
-- `categories.json` and `board.json`: every reporting station's flight category, rebuilt every 5 minutes from NOAA's METAR cache.
+- `categories.json` and `board.json`: every reporting station's flight category, rebuilt every 5 minutes from NOAA's METAR cache by the Worker's own cron (`src/worker.ts`, `src/lib/refresh-data.ts`). The `categories` job below does the same by hand.
 - `stations.json`: the airport search index, from NOAA's station list.
 - `runways/*.json`: runway ends and true headings, from [OurAirports](https://ourairports.com/data/) (public domain).
 

@@ -766,6 +766,7 @@ const pageTitle = report?.station
 
 <script>
   import { searchIndex, type StationTuple } from '../../lib/station-search';
+  import { formatAge } from '../../lib/categories';
 
   const RECENT_KEY = 'avi_wx_recent';
   const MAX_RECENT = 6;
@@ -1039,7 +1040,6 @@ const pageTitle = report?.station
 
     const paintLegend = () => {
       const counts = MAP_ORDER.map((category) => [category, stations.filter((s) => s[3] === category).length] as const);
-      const minutes = Math.max(0, Math.round((Date.now() - new Date(generated).getTime()) / 60000));
       legend.replaceChildren(
         ...counts.map(([category, count]) => {
           const item = document.createElement('span');
@@ -1050,7 +1050,7 @@ const pageTitle = report?.station
         }),
         Object.assign(document.createElement('span'), {
           className: 'wx-map-total',
-          textContent: `${stations.length.toLocaleString('en-US')} stations, updated ${minutes < 1 ? 'just now' : `${minutes} min ago`}`,
+          textContent: `${stations.length.toLocaleString('en-US')} stations · updated ${formatAge(Date.now() - new Date(generated).getTime())}`,
         }),
       );
       container.setAttribute(
